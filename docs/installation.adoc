@@ -34,7 +34,7 @@ Prerequisite: please ensure `git` is installed on the system.
 [source,console]
 ----
 # Clone the repository by version tag (or omit it to get the latest sources)
-git clone https://github.com/rnpgp/rnp.git -b v0.15.1
+git clone https://github.com/rnpgp/rnp.git -b v0.15.2
 
 # Install required packages
 sudo apt install g++-8 cmake libbz2-dev zlib1g-dev libjson-c-dev \
@@ -70,7 +70,7 @@ Prerequisite: please ensure `git` is installed on the system.
 [source,console]
 ----
 # Clone the repository by version tag (or omit it to get the latest sources)
-git clone https://github.com/rnpgp/rnp.git -b v0.15.1
+git clone https://github.com/rnpgp/rnp.git -b v0.15.2
 
 # Enable access to `testing` packages by editing /etc/apt/sources.list
 # deb http://deb.debian.org/debian testing main
