@@ -1,11 +1,19 @@
 name: windows-msys2
 
 on:
-  pull_request:
   push:
     branches:
       - master
       - 'release/**'
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
 
 env:
   BUILD_MODE: normal
@@ -17,6 +25,8 @@ jobs:
     runs-on: windows-latest
     if: "!contains(github.event.head_commit.message, 'skip ci')"
     timeout-minutes: 70
+    env:
+      GTEST_SOURCES: /home/runneradmin/googletest-download/googletest-src
     steps:
       - uses: actions/checkout@v2
         with:
@@ -29,6 +39,19 @@ jobs:
         run: |
           bash ci/install_noncacheable_dependencies.sh
           bash ci/install_cacheable_dependencies.sh
+      - name: download googletest
+        # This is workaround for the CMake or MSYS issue, failing to correctly checkout external project
+        #  Failed to get the hash for HEAD:  
+        #  fatal: ambiguous argument 'HEAD^commit': unknown revision or path not in the working tree.
+        shell: msys2 {0}
+        run: |
+          set -euxo pipefail
+          mkdir ${HOME}/googletest-download
+          pushd ${HOME}/googletest-download
+          git clone --no-checkout "https://github.com/google/googletest.git" "googletest-src"
+          cd googletest-src
+          git checkout c43f710 --
+          popd
       - name: tests
         shell: msys2 {0}
         run: bash ci/main.sh

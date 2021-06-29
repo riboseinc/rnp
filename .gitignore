@@ -21,8 +21,6 @@ CPackSourceConfig.cmake
 DartConfiguration.tcl
 _CPack_Packages/
 
-version.txt
-
 # Created by https://www.toptal.com/developers/gitignore/api/c,vim,c++,macos,linux,patch,cmake,emacs,vscode,python,windows,textmate,sublimetext
 # Edit at https://www.toptal.com/developers/gitignore?templates=c,vim,c++,macos,linux,patch,cmake,emacs,vscode,python,windows,textmate,sublimetext
 

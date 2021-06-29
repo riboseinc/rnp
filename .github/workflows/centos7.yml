@@ -1,11 +1,19 @@
 name: centos7
 
 on:
-  pull_request:
   push:
     branches:
       - master
       - 'release/**'
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
 
 env:
   CORES: 2

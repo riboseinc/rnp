@@ -27,7 +27,7 @@ task:
     su rnpuser -c 'bash ci/install_noncacheable_dependencies.sh'
   dependencies_cache:
     folder: $LOCAL_INSTALLS
-    fingerprint_script: sha256 ci/install.sh && git ls-remote https://github.com/riboseinc/ruby-rnp.git HEAD
+    fingerprint_script: sha256 ci/install.sh && git ls-remote https://github.com/rnpgp/ruby-rnp.git HEAD
   install_script: |
     # cirrus cache doesn't seem to retain ownership
     mkdir -p "$LOCAL_INSTALLS"

@@ -560,13 +560,14 @@ pgp_key_t *
 find_suitable_key(pgp_op_t            op,
                   pgp_key_t *         key,
                   pgp_key_provider_t *key_provider,
-                  uint8_t             desired_usage)
+                  uint8_t             desired_usage,
+                  bool                no_primary)
 {
     assert(desired_usage);
     if (!key) {
         return NULL;
     }
-    if (key->flags() & desired_usage) {
+    if (!no_primary && key->valid() && (key->flags() & desired_usage)) {
         return key;
     }
     pgp_key_request_ctx_t ctx{.op = op, .secret = key->is_secret()};
@@ -795,6 +796,18 @@ pgp_subsig_t::is_cert() const
            (type == PGP_CERT_PERSONA) || (type == PGP_CERT_POSITIVE);
 }
 
+bool
+pgp_subsig_t::expired() const
+{
+    /* sig expiration: absence of subpkt or 0 means it never expires */
+    uint64_t expiration = sig.expiration();
+    if (!expiration) {
+        return false;
+    }
+    uint64_t now = time(NULL);
+    return expiration + sig.creation() < now;
+}
+
 pgp_userid_t::pgp_userid_t(const pgp_userid_pkt_t &uidpkt)
 {
     /* copy packet data */
@@ -937,6 +950,7 @@ pgp_key_t::pgp_key_t(const pgp_key_t &src, bool pubonly)
     revocation_ = src.revocation_;
     format = src.format;
     validity_ = src.validity_;
+    valid_till_ = src.valid_till_;
 }
 
 pgp_key_t::pgp_key_t(const pgp_transferable_key_t &src) : pgp_key_t(src.key)
@@ -1439,27 +1453,15 @@ pgp_key_t::valid_till_common(bool expiry) const
 uint64_t
 pgp_key_t::valid_till() const
 {
-    if (!is_primary()) {
-        RNP_LOG("must be called for primary key only");
-        throw rnp::rnp_exception(RNP_ERROR_BAD_STATE);
-    }
-    return valid_till_common(expired());
+    return valid_till_;
 }
 
-uint64_t
-pgp_key_t::valid_till(const pgp_key_t &primary) const
+bool
+pgp_key_t::valid_at(uint64_t timestamp) const
 {
-    if (!is_subkey()) {
-        RNP_LOG("must be called for subkey only");
-        throw rnp::rnp_exception(RNP_ERROR_BAD_STATE);
-    }
-    uint64_t till = primary.valid_till();
-    /* if primary key was never valid then subkey was not either */
-    if (!till) {
-        return till;
-    }
-    /* subkey cannot be valid longer then the primary key */
-    return std::min(till, valid_till_common(expired() || primary.expired()));
+    /* TODO: consider implementing more sophisticated checks, as key validity time could
+     * possibly be non-continuous */
+    return (timestamp >= creation()) && timestamp && (timestamp <= valid_till());
 }
 
 const pgp_key_id_t &
@@ -1930,7 +1932,7 @@ pgp_key_t::is_signer(const pgp_subsig_t &sig) const
 }
 
 bool
-pgp_key_t::is_expired(const pgp_subsig_t &sig) const
+pgp_key_t::expired_with(const pgp_subsig_t &sig) const
 {
     /* key expiration: absence of subpkt or 0 means it never expires */
     uint64_t expiration = sig.sig.key_expiration();
@@ -2093,20 +2095,20 @@ pgp_key_t::validate_primary(rnp_key_store_t &keyring)
     /* if we have direct-key signature, then it has higher priority for expiration check */
     pgp_subsig_t *dirsig = latest_selfsig(PGP_UID_NONE);
     if (dirsig) {
-        has_expired = is_expired(*dirsig);
-        has_cert = !is_expired(*dirsig);
+        has_expired = expired_with(*dirsig);
+        has_cert = !has_expired;
     }
     /* if we have primary uid and it is more restrictive, then use it as well */
     pgp_subsig_t *prisig = NULL;
     if (!has_expired && (prisig = latest_selfsig(PGP_UID_PRIMARY))) {
-        has_expired = is_expired(*prisig);
-        has_cert = !is_expired(*prisig);
+        has_expired = expired_with(*prisig);
+        has_cert = !has_expired;
     }
     /* if we don't have direct-key sig and primary uid, use the latest self-cert */
     pgp_subsig_t *latest = NULL;
     if (!dirsig && !prisig && (latest = latest_selfsig(PGP_UID_ANY))) {
-        has_expired = is_expired(*latest);
-        has_cert = !is_expired(*latest);
+        has_expired = expired_with(*latest);
+        has_cert = !has_expired;
     }
 
     /* we have at least one non-expiring key self-signature or secret key */
@@ -2132,7 +2134,7 @@ pgp_key_t::validate_primary(rnp_key_store_t &keyring)
             continue;
         }
         /* check whether subkey is expired - then do not mark key as valid */
-        if (sub->is_expired(*sig)) {
+        if (sub->expired_with(*sig)) {
             continue;
         }
         validity_.valid = true;
@@ -2163,7 +2165,7 @@ pgp_key_t::validate_subkey(pgp_key_t *primary)
 
         if (is_binding(sig) && !has_binding) {
             /* check whether subkey is expired */
-            if (is_expired(sig)) {
+            if (expired_with(sig)) {
                 has_expired = true;
                 continue;
             }
@@ -2207,6 +2209,9 @@ pgp_key_t::revalidate(rnp_key_store_t &keyring)
     }
 
     validate(keyring);
+    if (!refresh_data()) {
+        RNP_LOG("Failed to refresh key data");
+    }
     /* validate/re-validate all subkeys as well */
     for (auto &fp : subkey_fps_) {
         pgp_key_t *subkey = rnp_key_store_get_key_by_fpr(&keyring, fp);
@@ -2216,10 +2221,6 @@ pgp_key_t::revalidate(rnp_key_store_t &keyring)
                 RNP_LOG("Failed to refresh subkey data");
             }
         }
-    }
-
-    if (!refresh_data()) {
-        RNP_LOG("Failed to refresh key data");
     }
 }
 
@@ -2250,7 +2251,8 @@ pgp_key_t::refresh_data()
     }
     /* if we have primary uid and it is more restrictive, then use it as well */
     pgp_subsig_t *prisig = latest_selfsig(PGP_UID_PRIMARY);
-    if (prisig && (!expiration_ || (prisig->sig.key_expiration() < expiration_))) {
+    if (prisig && prisig->sig.key_expiration() &&
+        (!expiration_ || (prisig->sig.key_expiration() < expiration_))) {
         expiration_ = prisig->sig.key_expiration();
     }
     /* if we don't have direct-key sig and primary uid, use the latest self-cert */
@@ -2299,6 +2301,8 @@ pgp_key_t::refresh_data()
             return false;
         }
     }
+    /* valid till */
+    valid_till_ = valid_till_common(expired());
     /* userid validities */
     for (size_t i = 0; i < uid_count(); i++) {
         get_uid(i).valid = false;
@@ -2306,7 +2310,7 @@ pgp_key_t::refresh_data()
     for (size_t i = 0; i < sig_count(); i++) {
         pgp_subsig_t &sig = get_sig(i);
         /* if certification expires key then consider userid as expired too */
-        if (!sig.valid() || !sig.is_cert() || !is_signer(sig) || is_expired(sig)) {
+        if (!sig.valid() || !sig.is_cert() || !is_signer(sig) || sig.expired()) {
             continue;
         }
         if (sig.uid >= uid_count()) {
@@ -2371,6 +2375,13 @@ pgp_key_t::refresh_data(pgp_key_t *primary)
             return false;
         }
         break;
+    }
+    /* valid till */
+    if (primary) {
+        valid_till_ =
+          std::min(primary->valid_till(), valid_till_common(expired() || primary->expired()));
+    } else {
+        valid_till_ = valid_till_common(expired());
     }
     return true;
 }

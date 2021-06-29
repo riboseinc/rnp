@@ -38,6 +38,7 @@ TEST_F(rnp_tests, test_key_add_userid)
     pgp_key_t *        key = NULL;
     pgp_source_t       src = {};
     pgp_dest_t         dst = {};
+    const uint32_t     base_expiry = 1234567890;
     static const char *keyids[] = {"7bc6709b15c23a4a", // primary
                                    "1ed63ee56fadc34d",
                                    "1d7e8a5393c997a8",
@@ -69,13 +70,13 @@ TEST_F(rnp_tests, test_key_add_userid)
     rnp_selfsig_cert_info_t selfsig0 = {};
     memcpy(selfsig0.userid, "added0", 7);
     selfsig0.key_flags = 0x2;
-    selfsig0.key_expiration = 123456788;
+    selfsig0.key_expiration = base_expiry;
     selfsig0.primary = false;
     assert_true(pgp_key_add_userid_certified(key, &key->pkt(), PGP_HASH_SHA1, &selfsig0));
     // make sure this userid has not been marked as primary
     assert_false(key->has_primary_uid());
     // make sure key expiration and flags are set
-    assert_int_equal(123456788, key->expiration());
+    assert_int_equal(base_expiry, key->expiration());
     assert_int_equal(0x2, key->flags());
     assert_true(key->get_uid(uidc).valid);
 
@@ -83,14 +84,14 @@ TEST_F(rnp_tests, test_key_add_userid)
     rnp_selfsig_cert_info_t selfsig1 = {};
     memcpy(selfsig1.userid, "added1", 7);
     selfsig1.key_flags = 0xAB;
-    selfsig1.key_expiration = 123456789;
+    selfsig1.key_expiration = base_expiry + 1;
     selfsig1.primary = 1;
     assert_true(pgp_key_add_userid_certified(key, &key->pkt(), PGP_HASH_SHA1, &selfsig1));
 
     // make sure this userid has been marked as primary
     assert_int_equal(key->uid_count() - 1, key->get_primary_uid());
     // make sure key expiration and flags are set
-    assert_int_equal(123456789, key->expiration());
+    assert_int_equal(base_expiry + 1, key->expiration());
     assert_int_equal(0xAB, key->flags());
     assert_true(key->get_uid(uidc + 1).valid);
 
@@ -118,7 +119,7 @@ TEST_F(rnp_tests, test_key_add_userid)
     assert_true(key->get_uid(uidc + 2).valid);
 
     // make sure key expiration and flags are not updated as they are picked from the primary
-    assert_int_equal(123456789, key->expiration());
+    assert_int_equal(base_expiry + 1, key->expiration());
     assert_int_equal(0xAB, key->flags());
     // check the userids array
     // added0
@@ -156,7 +157,7 @@ TEST_F(rnp_tests, test_key_add_userid)
     assert_int_equal(key->sig_count(), subsigc + 3);
 
     // make sure correct key expiration and flags are set
-    assert_int_equal(123456789, key->expiration());
+    assert_int_equal(base_expiry + 1, key->expiration());
     assert_int_equal(0xAB, key->flags());
 
     // check the userids array
@@ -197,7 +198,7 @@ TEST_F(rnp_tests, test_key_add_userid)
     assert_string_equal(key->get_uid(uidc - 1).str.c_str(), "added0");
     assert_int_equal(uidc - 1, key->get_sig(subsigc - 1).uid);
     assert_int_equal(0x2, key->get_sig(subsigc - 1).key_flags);
-    assert_int_equal(key->expiration(), 123456788);
+    assert_int_equal(key->expiration(), base_expiry);
     assert_int_equal(key->flags(), 0x2);
     // delete added0
     key->del_uid(0);

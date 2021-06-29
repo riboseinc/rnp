@@ -322,7 +322,7 @@ signature_check(pgp_signature_info_t *sinfo, pgp_hash_t *hash)
     }
 
     /* Validate signature itself */
-    if (sinfo->signer_valid || sinfo->signer->valid()) {
+    if (sinfo->signer_valid || sinfo->signer->valid_at(sinfo->sig->creation())) {
         sinfo->valid = !signature_validate(sinfo->sig, &sinfo->signer->material(), hash);
     } else {
         sinfo->valid = false;

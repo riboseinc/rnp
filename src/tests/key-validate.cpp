@@ -511,6 +511,61 @@ TEST_F(rnp_tests, test_key_validity)
     assert_false(subkey->valid());
     assert_false(subkey->expired());
     delete pubring;
+
+    /* Case13:
+     * Keys Alice [pub, sub]
+     * Alice key has expiring direct-key signature, non-expiring self-certification and
+     * non-expiring primary userid certification. Result: Alice [invalid], Alice sub[invalid]
+     */
+    pubring = new rnp_key_store_t(PGP_KEY_STORE_GPG, KEYSIG_PATH "case13/pubring.gpg");
+    assert_non_null(pubring);
+    assert_true(rnp_key_store_load_from_path(pubring, NULL));
+    assert_non_null(key = rnp_tests_get_key_by_id(pubring, "0451409669FFDE3C", NULL));
+    assert_false(key->valid());
+    assert_true(key->expired());
+    assert_int_equal(key->expiration(), 6);
+    assert_int_equal(key->subkey_count(), 1);
+    assert_non_null(subkey = pgp_key_get_subkey(key, pubring, 0));
+    assert_false(subkey->valid());
+    assert_false(subkey->expired());
+    delete pubring;
+
+    /* Case14:
+     * Keys Alice [pub, sub]
+     * Alice key has expiring direct-key signature, non-expiring self-certification and
+     * non-expiring primary userid certification (with 0 key expiration subpacket). Result:
+     * Alice [invalid], Alice sub[invalid]
+     */
+    pubring = new rnp_key_store_t(PGP_KEY_STORE_GPG, KEYSIG_PATH "case14/pubring.gpg");
+    assert_non_null(pubring);
+    assert_true(rnp_key_store_load_from_path(pubring, NULL));
+    assert_non_null(key = rnp_tests_get_key_by_id(pubring, "0451409669FFDE3C", NULL));
+    assert_false(key->valid());
+    assert_true(key->expired());
+    assert_int_equal(key->expiration(), 6);
+    assert_int_equal(key->subkey_count(), 1);
+    assert_non_null(subkey = pgp_key_get_subkey(key, pubring, 0));
+    assert_false(subkey->valid());
+    assert_false(subkey->expired());
+    delete pubring;
+
+    /* Case15:
+     * Keys [pub, sub]
+     * Signing subkey has expired primary-key signature embedded into the subkey binding.
+     * Result: primary [valid], sub[invalid]
+     */
+    pubring = new rnp_key_store_t(PGP_KEY_STORE_GPG, KEYSIG_PATH "case15/pubring.gpg");
+    assert_non_null(pubring);
+    assert_true(rnp_key_store_load_from_path(pubring, NULL));
+    assert_non_null(key = rnp_tests_get_key_by_id(pubring, "E863072D3E9042EE", NULL));
+    assert_true(key->valid());
+    assert_false(key->expired());
+    assert_int_equal(key->expiration(), 0);
+    assert_int_equal(key->subkey_count(), 1);
+    assert_non_null(subkey = pgp_key_get_subkey(key, pubring, 0));
+    assert_false(subkey->valid());
+    assert_false(subkey->expired());
+    delete pubring;
 }
 
 TEST_F(rnp_tests, test_key_expiry_direct_sig)
@@ -582,6 +637,72 @@ TEST_F(rnp_tests, test_key_expiry_direct_sig)
     assert_int_equal(key->expiration(), 100);
     assert_true(key->valid());
     assert_false(key->expired());
+
+    delete secring;
+    delete pubring;
+
+    secring = new rnp_key_store_t(PGP_KEY_STORE_GPG, KEYSIG_PATH "alice-sub-sec.pgp");
+    assert_true(rnp_key_store_load_from_path(secring, NULL));
+    assert_non_null(key = rnp_tests_key_search(secring, "Alice <alice@rnp>"));
+    /* create direct-key signature */
+    sig = {};
+    sig.version = PGP_V4;
+    sig.halg = PGP_HASH_SHA256;
+    sig.palg = key->alg();
+    sig.set_type(PGP_SIG_DIRECT);
+    sig.set_creation(key->creation());
+    sig.set_key_expiration(6);
+    sig.set_keyfp(key->fp());
+    sig.set_keyid(key->keyid());
+
+    key->unlock(pprov);
+    assert_true(signature_calculate_direct(&key->pkt(), &sig, &key->pkt()));
+    key->add_sig(sig, PGP_UID_NONE);
+    key->revalidate(*secring);
+    assert_int_equal(key->expiration(), 6);
+    /* add primary userid with 0 expiration */
+    selfsig1 = {};
+    memcpy(selfsig1.userid, boris, strlen(boris));
+    selfsig1.key_expiration = 0;
+    selfsig1.primary = true;
+    assert_true(pgp_key_add_userid_certified(key, &key->pkt(), PGP_HASH_SHA256, &selfsig1));
+    key->revalidate(*secring);
+    assert_int_equal(key->expiration(), 6);
+
+    pubring = new rnp_key_store_t(PGP_KEY_STORE_GPG, KEYSIG_PATH "alice-sub-pub.pgp");
+    assert_true(rnp_key_store_load_from_path(pubring, NULL));
+    assert_non_null(pubkey = rnp_tests_key_search(pubring, "Alice <alice@rnp>"));
+    assert_non_null(subpub = rnp_tests_get_key_by_id(pubring, "dd23ceb7febeff17", NULL));
+    assert_int_equal(subpub->expiration(), 0);
+    assert_true(subpub->valid());
+    assert_false(subpub->expired());
+
+    pubkey->add_sig(sig, PGP_UID_NONE);
+    pubkey->revalidate(*pubring);
+    assert_int_equal(pubkey->expiration(), 6);
+    assert_false(pubkey->valid());
+    assert_true(pubkey->expired());
+
+    pgp_transferable_userid_t truid = {};
+    truid.uid = key->get_uid(1).pkt;
+    truid.signatures.push_back(key->get_sig(key->get_uid(1).get_sig(0)).sig);
+    pubkey->add_uid(truid);
+    pubkey->revalidate(*pubring);
+
+    assert_int_equal(pubkey->expiration(), 6);
+    assert_false(pubkey->valid());
+    assert_true(pubkey->expired());
+
+    /* code below may be used to print out generated key to save it somewhere */
+    /*
+    pgp_dest_t out = {};
+    pgp_dest_t armored = {};
+    assert_rnp_success(init_stdout_dest(&out));
+    assert_rnp_success(init_armored_dst(&armored, &out, PGP_ARMORED_PUBLIC_KEY));
+    pubkey->write_xfer(armored, pubring);
+    dst_close(&armored, false);
+    dst_close(&out, false);
+    */
 
     delete secring;
     delete pubring;

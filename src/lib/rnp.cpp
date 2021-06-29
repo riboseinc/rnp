@@ -2317,6 +2317,9 @@ try {
                                        get_key_prefer_public(handle),
                                        &handle->ffi->key_provider,
                                        PGP_KF_ENCRYPT);
+    if (!key) {
+        key = get_key_prefer_public(handle);
+    }
     op->rnpctx.recipients.push_back(key);
     return RNP_SUCCESS;
 }
@@ -3681,25 +3684,6 @@ try {
 }
 FFI_GUARD
 
-static pgp_key_t *
-find_encrypting_subkey(rnp_ffi_t ffi, const pgp_key_t &primary)
-{
-    pgp_key_search_t search = {};
-    search.type = PGP_KEY_SEARCH_FINGERPRINT;
-
-    for (auto &fp : primary.subkey_fps()) {
-        search.by.fingerprint = fp;
-        pgp_key_t *subkey = find_key(ffi, &search, KEY_TYPE_PUBLIC, true);
-        if (!subkey) {
-            subkey = find_key(ffi, &search, KEY_TYPE_SECRET, true);
-        }
-        if (subkey && subkey->valid() && subkey->can_encrypt()) {
-            return subkey;
-        }
-    }
-    return NULL;
-}
-
 rnp_result_t
 rnp_key_export_autocrypt(rnp_key_handle_t key,
                          rnp_key_handle_t subkey,
@@ -3728,9 +3712,10 @@ try {
             return RNP_ERROR_BAD_PARAMETERS;
         }
     } else {
-        sub = find_encrypting_subkey(key->ffi, *primary);
+        sub = find_suitable_key(
+          PGP_OP_ENCRYPT, primary, &key->ffi->key_provider, PGP_KF_ENCRYPT, true);
     }
-    if (!sub) {
+    if (!sub || sub->is_primary()) {
         FFI_LOG(key->ffi, "No encrypting subkey");
         return RNP_ERROR_KEY_NOT_FOUND;
     }
@@ -5568,8 +5553,12 @@ try {
     pgp_key_pkt_t *         seckey = NULL;
     pgp_key_pkt_t *         decrypted_seckey = NULL;
 
-    if (!handle || !uid || !hash) {
+    if (!handle || !uid) {
         return RNP_ERROR_NULL_POINTER;
+    }
+
+    if (!hash) {
+        hash = DEFAULT_HASH_ALG;
     }
 
     if (!str_to_hash_alg(hash, &hash_alg)) {
@@ -6468,7 +6457,7 @@ try {
         if (!primary->validated()) {
             return RNP_ERROR_VERIFICATION_FAILED;
         }
-        *result = key->valid_till(*primary);
+        *result = key->valid_till();
     } else {
         *result = key->valid_till();
     }

@@ -1,11 +1,19 @@
 name: centos8
 
 on:
-  pull_request:
   push:
     branches:
       - master
       - 'release/**'
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
 
 env:
   CORES: 2
@@ -31,8 +39,15 @@ jobs:
             GPG_VERSION: beta
           - BUILD_MODE: sanitize
             GPG_VERSION: stable
-          - BUILD_MODE: sanitize
-            GPG_VERSION: beta
+
+          # TODO: fix build error:
+          # libcommon.a(libcommon_a-iobuf.o):(.bss+0x8): multiple definition of `iobuf_debug_mode'
+          # t-iobuf.o:(.bss+0x0): first defined here
+          # clang-11: error: linker command failed with exit code 1 (use -v to see invocation)
+          #
+          # - BUILD_MODE: sanitize
+          #   GPG_VERSION: beta
+
           - BUILD_MODE: coverage
             GPG_VERSION: beta
             RNP_TESTS: cli_tests

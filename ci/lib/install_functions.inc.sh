@@ -215,7 +215,7 @@ linux_install_centos7() {
 linux_install_centos8() {
   yum_prepare_repos epel-release
   yum_install_build_dependencies \
-    cmake3
+    cmake
 
   yum_install_dynamic_build_dependencies_if_needed
 

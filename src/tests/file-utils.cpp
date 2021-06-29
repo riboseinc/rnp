@@ -51,3 +51,23 @@ TEST_F(rnp_tests, test_rnp_mkstemp)
     }
 #endif
 }
+
+TEST_F(rnp_tests, test_rnp_access)
+{
+#ifdef _WIN32
+    /* Assume we are running as non-Administrator user */
+    assert_int_equal(0, rnp_access("C:\\Windows", F_OK));
+    assert_int_equal(0, rnp_access("C:\\Windows", R_OK));
+    assert_int_equal(0, rnp_access("C:\\Windows", W_OK));
+    assert_int_equal(0, rnp_access("C:\\Windows\\System32\\User32.dll", F_OK));
+    assert_int_equal(0, rnp_access("C:\\Windows\\System32\\User32.dll", R_OK));
+    /* Should fail, but unfortunately _waccess() works this way */
+    assert_int_equal(0, rnp_access("C:\\Windows\\System32\\User32.dll", W_OK));
+#else
+    /* Assume we are running as non-root and root directory is non-writeable for us */
+    assert_int_equal(0, rnp_access("/", F_OK));
+    assert_int_equal(0, rnp_access("/", R_OK));
+    assert_int_equal(-1, rnp_access("/", W_OK));
+    assert_int_equal(0, rnp_access("/tmp", R_OK | W_OK));
+#endif
+}

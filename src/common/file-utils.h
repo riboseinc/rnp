@@ -37,6 +37,7 @@ bool    rnp_dir_exists(const char *path);
 int64_t rnp_filemtime(const char *path);
 int     rnp_open(const char *filename, int oflag, int pmode);
 FILE *  rnp_fopen(const char *filename, const char *mode);
+int     rnp_access(const char *path, int mode);
 int     rnp_stat(const char *filename, struct stat *statbuf);
 int     rnp_rename(const char *oldpath, const char *newpath);
 int     rnp_unlink(const char *path);
@@ -55,6 +56,12 @@ std::string rnp_readdir_name(DIR *dir);
 #define RNP_MKDIR(pathname, mode) rnp_mkdir(pathname)
 #else
 #define RNP_MKDIR(pathname, mode) mkdir(pathname, mode)
+#endif
+
+#ifdef _MSC_VER
+#define R_OK 4 /* Test for read permission.  */
+#define W_OK 2 /* Test for write permission.  */
+#define F_OK 0 /* Test for existence.  */
 #endif
 
 char *rnp_compose_path(const char *first, ...);

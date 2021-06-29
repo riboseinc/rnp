@@ -1976,6 +1976,15 @@ class Misc(unittest.TestCase):
 
         shutil.rmtree(test_dir)
 
+    def test_homedir_accessibility(self):
+        ret, _, _ = run_proc(RNPK, ['--homedir', path.join(RNPDIR, 'non-existing'), '--generate', '--password=none'])
+        if ret == 0:
+            raise_err("failed to check for homedir accessibility")
+        os.mkdir(path.join(RNPDIR, 'existing'), 0o700)
+        ret, _, _ = run_proc(RNPK, ['--homedir', path.join(RNPDIR, 'existing'), '--generate', '--password=none'])
+        if ret != 0:
+            raise_err("failed to use writeable and existing homedir")
+
     def test_no_home_dir(self):
         home = os.environ['HOME']
         del os.environ['HOME']

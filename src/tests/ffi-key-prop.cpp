@@ -78,27 +78,26 @@ TEST_F(rnp_tests, test_ffi_key_set_expiry_multiple_uids)
     assert_true(check_uid_primary(key, 0, false));
     assert_true(check_uid_primary(key, 1, false));
     assert_true(check_uid_primary(key, 2, false));
-    /* set expiration time to minimum value so everything is expired now */
+    /* set expiration time to minimum value so key is expired now, but uids are still valid */
     assert_rnp_success(rnp_key_set_expiration(key, 1));
     assert_rnp_success(rnp_key_get_expiration(key, &expiry));
     assert_int_equal(expiry, 1);
     bool valid = true;
     assert_rnp_success(rnp_key_is_valid(key, &valid));
     assert_false(valid);
-    assert_true(check_uid_valid(key, 0, false));
-    assert_true(check_uid_valid(key, 1, false));
-    assert_true(check_uid_valid(key, 2, false));
+    assert_true(check_uid_valid(key, 0, true));
+    assert_true(check_uid_valid(key, 1, true));
+    assert_true(check_uid_valid(key, 2, true));
     /* reload */
     rnp_key_handle_destroy(key);
     reload_keyrings(&ffi);
     assert_rnp_success(rnp_locate_key(ffi, "userid", "Alice <alice@rnp>", &key));
-    assert_null(key);
-    assert_rnp_success(rnp_locate_key(ffi, "keyid", "0451409669ffde3c", &key));
+    assert_non_null(key);
     assert_rnp_success(rnp_key_get_expiration(key, &expiry));
     assert_int_equal(expiry, 1);
-    assert_true(check_uid_valid(key, 0, false));
-    assert_true(check_uid_valid(key, 1, false));
-    assert_true(check_uid_valid(key, 2, false));
+    assert_true(check_uid_valid(key, 0, true));
+    assert_true(check_uid_valid(key, 1, true));
+    assert_true(check_uid_valid(key, 2, true));
     /* set expiration to maximum value */
     assert_rnp_success(
       rnp_ffi_set_pass_provider(ffi, ffi_string_password_provider, (void *) "password"));

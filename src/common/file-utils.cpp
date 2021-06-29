@@ -110,6 +110,19 @@ rnp_fopen(const char *filename, const char *mode)
 }
 
 int
+rnp_access(const char *path, int mode)
+{
+#ifdef _WIN32
+    try {
+        return _waccess(wstr_from_utf8(path).c_str(), mode);
+    }
+    CATCH_AND_RETURN(-1)
+#else
+    return access(path, mode);
+#endif
+}
+
+int
 rnp_stat(const char *filename, struct stat *statbuf)
 {
 #ifdef _WIN32

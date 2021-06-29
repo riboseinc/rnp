@@ -1,11 +1,19 @@
 name: ubuntu
 
 on:
-  pull_request:
   push:
     branches:
       - master
       - 'release/**'
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
 
 env:
   CORES: 2
@@ -163,7 +171,7 @@ jobs:
       - name: Download latest version.cmake
         uses: actions/checkout@v2
         with:
-          repository: riboseinc/cmake-versioning
+          repository: rnpgp/cmake-versioning
           fetch-depth: 0
           path: cmake-versioning
       - name: Compare

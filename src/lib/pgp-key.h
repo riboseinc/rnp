@@ -109,6 +109,8 @@ typedef struct pgp_subsig_t {
     bool valid() const;
     /** @brief Returns true if signature is certification */
     bool is_cert() const;
+    /** @brief Returns true if signature is expired */
+    bool expired() const;
 } pgp_subsig_t;
 
 typedef std::unordered_map<pgp_sig_id_t, pgp_subsig_t> pgp_sig_map_t;
@@ -149,7 +151,7 @@ struct pgp_key_t {
     std::vector<pgp_userid_t> uids_{};     /* array of user ids */
     pgp_key_pkt_t             pkt_{};      /* pubkey/seckey data packet */
     uint8_t                   flags_{};    /* key flags */
-    time_t                    expiration_{}; /* key expiration time, if available */
+    uint32_t                  expiration_{}; /* key expiration time, if available */
     pgp_key_id_t              keyid_{};
     pgp_fingerprint_t         fingerprint_{};
     pgp_key_grip_t            grip_{};
@@ -163,6 +165,7 @@ struct pgp_key_t {
     bool            revoked_{};    /* key has been revoked */
     pgp_revoke_t    revocation_{}; /* revocation reason */
     pgp_validity_t  validity_{};   /* key's validity */
+    uint64_t        valid_till_{}; /* date till which key is/was valid */
 
     pgp_subsig_t *latest_uid_selfcert(uint32_t uid);
     void          validate_primary(rnp_key_store_t &keyring);
@@ -242,10 +245,10 @@ struct pgp_key_t {
 
     bool valid() const;
     bool validated() const;
-    /** @brief return time till which primary key is considered to be valid */
+    /** @brief return time till which key is considered to be valid */
     uint64_t valid_till() const;
-    /** @brief return time till which subkey is considered to be valid */
-    uint64_t valid_till(const pgp_key_t &primary) const;
+    /** @brief check whether key was/will be valid at the specified time */
+    bool valid_at(uint64_t timestamp) const;
 
     /** @brief Get key's id */
     const pgp_key_id_t &keyid() const;
@@ -356,7 +359,7 @@ struct pgp_key_t {
     bool is_signer(const pgp_subsig_t &sig) const;
 
     /** @brief Returns true if key is expired according to sig. */
-    bool is_expired(const pgp_subsig_t &sig) const;
+    bool expired_with(const pgp_subsig_t &sig) const;
 
     /** @brief Check whether signature is key's self certification. */
     bool is_self_cert(const pgp_subsig_t &sig) const;
@@ -466,6 +469,7 @@ bool pgp_subkey_set_expiration(pgp_key_t *                    sub,
  *  @param desired_usage
  *  @param key_provider the key provider. This will be used
  *         if/when subkeys are checked.
+ *  @param no_primary set true if only subkeys must be returned
  *
  *  @returns key or last created subkey with desired usage flag
  *           set or NULL if not found
@@ -473,7 +477,8 @@ bool pgp_subkey_set_expiration(pgp_key_t *                    sub,
 pgp_key_t *find_suitable_key(pgp_op_t            op,
                              pgp_key_t *         key,
                              pgp_key_provider_t *key_provider,
-                             uint8_t             desired_usage);
+                             uint8_t             desired_usage,
+                             bool                no_primary = false);
 
 /*
  *  Picks up hash algorithm according to domain parameters set

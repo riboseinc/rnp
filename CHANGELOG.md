@@ -1,5 +1,23 @@
 ## Changelog
 
+### 0.15.2 [2021-06-28]
+
+#### General
+
+* Be less strict in userid validation: allow to use userids with self-signature, which has key expiration in the past.
+* Do not mark signature as invalid if key which produced it is expired now, but was valid during signing.
+* Fix incorrect key expiration calculation in some cases.
+* Fix incorrect version number in `version.txt`.
+
+#### FFI
+
+* Allow to pass NULL hash parameter to `rnp_key_add_uid()` to pick the default one.
+* Use the same approach as in `rnp_op_encrypt_add_recipient()` for encryption subkey selection in `rnp_key_export_autocrypt()`.
+
+#### CLI
+
+* `rnp`: Show error message if encryption failed.
+
 ### 0.15.1 [2021-05-28]
 
 #### General

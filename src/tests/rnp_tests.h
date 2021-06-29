@@ -341,6 +341,8 @@ void test_ffi_remove_uid(void **state);
 
 void test_rnp_mkstemp(void **state);
 
+void test_rnp_access(void **state);
+
 void test_dsa_roundtrip(void **state);
 
 void test_dsa_verify_negative(void **state);

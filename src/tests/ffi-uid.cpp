@@ -127,10 +127,10 @@ TEST_F(rnp_tests, test_ffi_uid_validity)
     assert_rnp_success(rnp_uid_is_valid(uid, &valid));
     assert_true(valid);
     rnp_uid_handle_destroy(uid);
-    /* userid 1 : expired */
+    /* userid 1 : self-sig marks key as expired, but uid is still valid */
     assert_rnp_success(rnp_key_get_uid_handle_at(key, 1, &uid));
     assert_rnp_success(rnp_uid_is_valid(uid, &valid));
-    assert_false(valid);
+    assert_true(valid);
     rnp_uid_handle_destroy(uid);
     /* userid 2 : invalid (malformed signature data) */
     assert_rnp_success(rnp_key_get_uid_handle_at(key, 2, &uid));
@@ -150,8 +150,10 @@ TEST_F(rnp_tests, test_ffi_uid_validity)
     assert_non_null(newkey);
     rnp_key_handle_destroy(newkey);
     newkey = NULL;
+    /* even if signature marks key as expired uid is still valid and usable */
     assert_rnp_success(rnp_locate_key(ffi, "userid", "userid-expired", &newkey));
-    assert_null(newkey);
+    assert_non_null(newkey);
+    rnp_key_handle_destroy(newkey);
     assert_rnp_success(rnp_locate_key(ffi, "userid", "userid-invalid", &newkey));
     assert_null(newkey);
 
@@ -166,10 +168,10 @@ TEST_F(rnp_tests, test_ffi_uid_validity)
     assert_rnp_success(rnp_uid_is_valid(uid, &valid));
     assert_true(valid);
     rnp_uid_handle_destroy(uid);
-    /* userid 1 : expired */
+    /* userid 1 : key is expired via self-cert, but uid is valid */
     assert_rnp_success(rnp_key_get_uid_handle_at(key, 1, &uid));
     assert_rnp_success(rnp_uid_is_valid(uid, &valid));
-    assert_false(valid);
+    assert_true(valid);
     rnp_uid_handle_destroy(uid);
     /* userid 2 : valid */
     assert_rnp_success(rnp_key_get_uid_handle_at(key, 2, &uid));
@@ -202,11 +204,11 @@ TEST_F(rnp_tests, test_ffi_uid_validity)
     assert_false(primary);
     rnp_uid_handle_destroy(uid);
 
-    /* Primary userid now should be userid-invalid - first is revoked, second is expired */
+    /* Primary userid now should be userid-expired */
     char *uid_str = NULL;
     assert_rnp_success(rnp_key_get_primary_uid(key, &uid_str));
     assert_non_null(uid_str);
-    assert_string_equal(uid_str, "userid-invalid");
+    assert_string_equal(uid_str, "userid-expired");
     rnp_buffer_destroy(uid_str);
 
     /* We should not be able to find key via userid-valid */
@@ -215,15 +217,56 @@ TEST_F(rnp_tests, test_ffi_uid_validity)
 
     rnp_key_handle_destroy(key);
 
-    /* Load expired key with single uid: now should be no primary */
+    /* Load expired key with single uid: still has primary uid as it has valid self-cert */
     assert_rnp_success(rnp_unload_keys(ffi, RNP_KEY_UNLOAD_PUBLIC));
     assert_true(import_pub_keys(ffi, "data/test_uid_validity/key-expired.pgp"));
     assert_rnp_success(rnp_locate_key(ffi, "keyid", "4BE147BB22DF1E60", &key));
     assert_non_null(key);
+    uid_str = NULL;
+    assert_rnp_success(rnp_key_get_primary_uid(key, &uid_str));
+    assert_string_equal(uid_str, "test1");
+    rnp_buffer_destroy(uid_str);
+    rnp_key_handle_destroy(key);
 
+    /* UID with expired self-certification signature */
+    assert_rnp_success(rnp_unload_keys(ffi, RNP_KEY_UNLOAD_PUBLIC));
+    assert_true(import_pub_keys(ffi, "data/test_uid_validity/key-uid-expired-sig.pgp"));
+    assert_rnp_success(rnp_locate_key(ffi, "userid", "expired_uid_sig", &key));
+    assert_null(key);
+    assert_rnp_success(rnp_locate_key(ffi, "keyid", "129195E05B0943CB", &key));
+    assert_non_null(key);
     uid_str = NULL;
     assert_rnp_failure(rnp_key_get_primary_uid(key, &uid_str));
     assert_null(uid_str);
+    assert_rnp_success(rnp_key_get_uid_handle_at(key, 0, &uid));
+    assert_rnp_success(rnp_uid_is_valid(uid, &valid));
+    assert_false(valid);
+    rnp_uid_handle_destroy(uid);
+    assert_rnp_success(rnp_key_is_valid(key, &valid));
+    /* key is valid since there is a subkey with valid binding signature */
+    assert_true(valid);
+    rnp_key_handle_destroy(key);
+
+    /* UID with expired self-certification on primary uid signature */
+    assert_rnp_success(rnp_unload_keys(ffi, RNP_KEY_UNLOAD_PUBLIC));
+    assert_true(import_pub_keys(ffi, "data/test_uid_validity/key-uid-prim-expired-sig.pgp"));
+    assert_rnp_success(rnp_locate_key(ffi, "userid", "expired_prim_uid_sig", &key));
+    assert_null(key);
+    assert_rnp_success(rnp_locate_key(ffi, "userid", "non_prim_uid", &key));
+    assert_non_null(key);
+    uid_str = NULL;
+    assert_rnp_success(rnp_key_get_primary_uid(key, &uid_str));
+    assert_non_null(uid_str);
+    assert_string_equal(uid_str, "non_prim_uid");
+    rnp_buffer_destroy(uid_str);
+    assert_rnp_success(rnp_key_get_uid_handle_at(key, 0, &uid));
+    assert_rnp_success(rnp_uid_is_valid(uid, &valid));
+    assert_false(valid);
+    rnp_uid_handle_destroy(uid);
+    assert_rnp_success(rnp_key_get_uid_handle_at(key, 1, &uid));
+    assert_rnp_success(rnp_uid_is_valid(uid, &valid));
+    assert_true(valid);
+    rnp_uid_handle_destroy(uid);
     rnp_key_handle_destroy(key);
 
     rnp_ffi_destroy(ffi);

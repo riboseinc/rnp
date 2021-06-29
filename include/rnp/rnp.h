@@ -1097,8 +1097,11 @@ RNP_API rnp_result_t rnp_uid_get_data(rnp_uid_handle_t uid, void **data, size_t 
  */
 RNP_API rnp_result_t rnp_uid_is_primary(rnp_uid_handle_t uid, bool *primary);
 
-/** Get userid validity status. Userid is considered as valid if it has at least one
- *  valid, non-expired self-certification.
+/** Get userid validity status. Userid is considered as valid if key itself is valid, and
+ *  userid has at least one valid, non-expired self-certification.
+ *  Note: - userid still may be valid even if a primary key is invalid - expired, revoked, etc.
+ *        - up to the RNP version 0.15.1 uid was not considered as valid if it's latest
+ *          self-signature has key expiration in the past.
  *
  * @param uid user id handle.
  * @param valid validity status will be stored here on success.
@@ -1385,7 +1388,8 @@ RNP_API rnp_result_t rnp_key_get_curve(rnp_key_handle_t key, char **curve);
  *  @param key the key to add - must be a secret key
  *  @param uid the UID to add
  *  @param hash name of the hash function to use for the uid binding
- *         signature (eg "SHA256")
+ *         signature (eg "SHA256"). If NULL, default hash algorithm
+ *         will be used.
  *  @param expiration time when this user id expires
  *  @param key_flags usage flags, see section 5.2.3.21 of RFC 4880
  *         or just provide zero to indicate no special handling.
@@ -2458,6 +2462,14 @@ RNP_API rnp_result_t rnp_op_encrypt_create(rnp_op_encrypt_t *op,
                                            rnp_input_t       input,
                                            rnp_output_t      output);
 
+/**
+ * @brief Add recipient's public key to encrypting context.
+ *
+ * @param op opaque encrypting context. Must be allocated and initialized.
+ * @param key public key, used for encryption. Key is not checked for
+ *        validity or expiration.
+ * @return RNP_SUCCESS if operation succeeds or error code otherwise.
+ */
 RNP_API rnp_result_t rnp_op_encrypt_add_recipient(rnp_op_encrypt_t op, rnp_key_handle_t key);
 
 /**

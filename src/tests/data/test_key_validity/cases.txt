@@ -60,3 +60,18 @@ Case12:
 Keys Alice [pub, sub]
 Alice key has non-expiring direct-key signature, non-expiring self-certification and expiring
 primary userid certification. Result: Alice [invalid], Alice sub[invalid]
+
+Case13:
+Keys Alice [pub, sub]
+Alice key has expiring direct-key signature, non-expiring self-certification and non-expiring
+primary userid certification. Result: Alice [invalid], Alice sub[invalid]
+
+Case14:
+Keys Alice [pub, sub]
+Alice key has expiring direct-key signature, non-expiring self-certification and non-expiring
+primary userid certification (with 0 key expiration subpacket). Result: Alice [invalid], Alice sub[invalid]
+
+Case15:
+Keys [pub, sub]
+Signing subkey has expired primary-key signature embedded into the subkey binding.
+Result: primary [valid], sub[invalid]
