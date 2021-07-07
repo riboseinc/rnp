@@ -82,6 +82,7 @@
 #include "hash.h"
 #include "config.h"
 #include "utils.h"
+#include "bn.h"
 
 rnp_result_t
 rsa_validate_key(rng_t *rng, const pgp_rsa_key_t *key, bool secret)

@@ -312,6 +312,7 @@ encrypted_dst_write_cfb(pgp_dest_t *dst, const void *buf, size_t len)
     return RNP_SUCCESS;
 }
 
+#if defined(ENABLE_AEAD)
 static rnp_result_t
 encrypted_start_aead_chunk(pgp_dest_encrypted_param_t *param, size_t idx, bool last)
 {
@@ -383,10 +384,15 @@ encrypted_start_aead_chunk(pgp_dest_encrypted_param_t *param, size_t idx, bool l
 
     return res ? RNP_SUCCESS : RNP_ERROR_BAD_PARAMETERS;
 }
+#endif
 
 static rnp_result_t
 encrypted_dst_write_aead(pgp_dest_t *dst, const void *buf, size_t len)
 {
+#if !defined(ENABLE_AEAD)
+    RNP_LOG("AEAD is not enabled.");
+    return RNP_ERROR_WRITE;
+#else
     pgp_dest_encrypted_param_t *param = (pgp_dest_encrypted_param_t *) dst->param;
 
     size_t       sz;
@@ -439,29 +445,34 @@ encrypted_dst_write_aead(pgp_dest_t *dst, const void *buf, size_t len)
     }
 
     return RNP_SUCCESS;
+#endif
 }
 
 static rnp_result_t
 encrypted_dst_finish(pgp_dest_t *dst)
 {
-    uint8_t                     mdcbuf[MDC_V1_SIZE];
     pgp_dest_encrypted_param_t *param = (pgp_dest_encrypted_param_t *) dst->param;
-    rnp_result_t                res;
 
     if (param->aead) {
+#if !defined(ENABLE_AEAD)
+        RNP_LOG("AEAD is not enabled.");
+        rnp_result_t res = RNP_ERROR_NOT_IMPLEMENTED;
+#else
         size_t chunks = param->chunkidx;
         /* if we didn't write anything in current chunk then discard it and restart */
         if (param->chunkout || param->cachelen) {
             chunks++;
         }
 
-        res = encrypted_start_aead_chunk(param, chunks, true);
+        rnp_result_t res = encrypted_start_aead_chunk(param, chunks, true);
         pgp_cipher_aead_destroy(&param->encrypt);
-
+#endif
         if (res) {
+            finish_streamed_packet(&param->pkt);
             return res;
         }
     } else if (param->has_mdc) {
+        uint8_t mdcbuf[MDC_V1_SIZE];
         mdcbuf[0] = MDC_PKT_TAG;
         mdcbuf[1] = MDC_V1_SIZE - 2;
         pgp_hash_add(&param->mdc, mdcbuf, 2);
@@ -482,11 +493,13 @@ encrypted_dst_close(pgp_dest_t *dst, bool discard)
         return;
     }
 
-    if (!param->aead) {
+    if (param->aead) {
+#if defined(ENABLE_AEAD)
+        pgp_cipher_aead_destroy(&param->encrypt);
+#endif
+    } else {
         pgp_hash_finish(&param->mdc, NULL);
         pgp_cipher_cfb_finish(&param->encrypt);
-    } else {
-        pgp_cipher_aead_destroy(&param->encrypt);
     }
     close_streamed_packet(&param->pkt, discard);
     free(param);
@@ -551,6 +564,7 @@ encrypted_add_recipient(pgp_write_handler_t *handler,
         break;
     }
     case PGP_PKA_SM2: {
+#if defined(ENABLE_SM2)
         ret = sm2_encrypt(rnp_ctx_rng_handle(handler->ctx),
                           &material.sm2,
                           enckey.data(),
@@ -562,8 +576,17 @@ encrypted_add_recipient(pgp_write_handler_t *handler,
             return ret;
         }
         break;
+#else
+        RNP_LOG("sm2_encrypt is not available");
+        return RNP_ERROR_NOT_IMPLEMENTED;
+#endif
     }
     case PGP_PKA_ECDH: {
+        if (!curve_supported(userkey->material().ec.curve)) {
+            RNP_LOG("ECDH encrypt: curve %d is not supported.",
+                    (int) userkey->material().ec.curve);
+            return RNP_ERROR_NOT_SUPPORTED;
+        }
         ret = ecdh_encrypt_pkcs5(rnp_ctx_rng_handle(handler->ctx),
                                  &material.ecdh,
                                  enckey.data(),
@@ -603,6 +626,7 @@ encrypted_add_recipient(pgp_write_handler_t *handler,
     }
 }
 
+#if defined(ENABLE_AEAD)
 static bool
 encrypted_sesk_set_ad(pgp_crypt_t *crypt, pgp_sk_sesskey_t *skey)
 {
@@ -615,6 +639,7 @@ encrypted_sesk_set_ad(pgp_crypt_t *crypt, pgp_sk_sesskey_t *skey)
 
     return pgp_cipher_aead_set_ad(crypt, ad_data, 4);
 }
+#endif
 
 static rnp_result_t
 encrypted_add_password(rnp_symmetric_pass_info_t * pass,
@@ -626,8 +651,6 @@ encrypted_add_password(rnp_symmetric_pass_info_t * pass,
     pgp_sk_sesskey_t skey = {};
     unsigned         s2keylen; /* length of the s2k key */
     pgp_crypt_t      kcrypt;
-    uint8_t          nonce[PGP_AEAD_MAX_NONCE_LEN];
-    bool             res;
 
     skey.alg = param->ctx->ealg;
     skey.s2k = pass->s2k;
@@ -659,6 +682,10 @@ encrypted_add_password(rnp_symmetric_pass_info_t * pass,
             pgp_cipher_cfb_finish(&kcrypt);
         }
     } else {
+#if !defined(ENABLE_AEAD)
+        RNP_LOG("AEAD support is not enabled.");
+        return RNP_ERROR_NOT_IMPLEMENTED;
+#else
         /* AEAD-encrypted v5 packet */
         if ((param->ctx->aalg != PGP_AEAD_EAX) && (param->ctx->aalg != PGP_AEAD_OCB)) {
             RNP_LOG("unsupported AEAD algorithm");
@@ -685,17 +712,19 @@ encrypted_add_password(rnp_symmetric_pass_info_t * pass,
         }
 
         /* calculate nonce */
-        size_t nlen = pgp_cipher_aead_nonce(skey.aalg, skey.iv, nonce, 0);
+        uint8_t nonce[PGP_AEAD_MAX_NONCE_LEN];
+        size_t  nlen = pgp_cipher_aead_nonce(skey.aalg, skey.iv, nonce, 0);
 
         /* start cipher, encrypt key and get tag */
-        res = pgp_cipher_aead_start(&kcrypt, nonce, nlen) &&
-              pgp_cipher_aead_finish(&kcrypt, skey.enckey, key, keylen);
+        bool res = pgp_cipher_aead_start(&kcrypt, nonce, nlen) &&
+                   pgp_cipher_aead_finish(&kcrypt, skey.enckey, key, keylen);
 
         pgp_cipher_aead_destroy(&kcrypt);
 
         if (!res) {
             return RNP_ERROR_BAD_STATE;
         }
+#endif
     }
 
     /* Writing symmetric key encrypted session key packet */
@@ -758,6 +787,10 @@ encrypted_start_cfb(pgp_dest_encrypted_param_t *param, uint8_t *enckey)
 static rnp_result_t
 encrypted_start_aead(pgp_dest_encrypted_param_t *param, uint8_t *enckey)
 {
+#if !defined(ENABLE_AEAD)
+    RNP_LOG("AEAD support is not enabled.");
+    return RNP_ERROR_NOT_IMPLEMENTED;
+#else
     uint8_t hdr[4 + PGP_AEAD_MAX_NONCE_LEN];
     size_t  nlen;
 
@@ -798,6 +831,7 @@ encrypted_start_aead(pgp_dest_encrypted_param_t *param, uint8_t *enckey)
     }
 
     return encrypted_start_aead_chunk(param, 0, false);
+#endif
 }
 
 static rnp_result_t

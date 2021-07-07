@@ -27,12 +27,14 @@
 #ifndef RNP_SM2_H_
 #define RNP_SM2_H_
 
+#include "config.h"
 #include "ec.h"
 
 typedef struct pgp_sm2_encrypted_t {
     pgp_mpi_t m;
 } pgp_sm2_encrypted_t;
 
+#if defined(ENABLE_SM2)
 rnp_result_t sm2_validate_key(rng_t *rng, const pgp_ec_key_t *key, bool secret);
 
 /**
@@ -68,5 +70,6 @@ rnp_result_t sm2_decrypt(uint8_t *                  out,
                          size_t *                   out_len,
                          const pgp_sm2_encrypted_t *in,
                          const pgp_ec_key_t *       key);
+#endif // defined(ENABLE_SM2)
 
 #endif // SM2_H_

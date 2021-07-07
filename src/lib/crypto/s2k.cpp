@@ -28,7 +28,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <botan/ffi.h>
 #include <stdio.h>
 #include "config.h"
 #ifndef _MSC_VER
@@ -42,6 +41,9 @@
 #include "rnp.h"
 #include "types.h"
 #include "utils.h"
+#ifdef CRYPTO_BACKEND_BOTAN
+#include <botan/ffi.h>
+#endif
 
 bool
 pgp_s2k_derive_key(pgp_s2k_t *s2k, const char *password, uint8_t *key, int keysize)
@@ -75,6 +77,7 @@ pgp_s2k_derive_key(pgp_s2k_t *s2k, const char *password, uint8_t *key, int keysi
     return true;
 }
 
+#ifdef CRYPTO_BACKEND_BOTAN
 int
 pgp_s2k_iterated(pgp_hash_alg_t alg,
                  uint8_t *      out,
@@ -97,6 +100,7 @@ pgp_s2k_iterated(pgp_hash_alg_t alg,
                          salt,
                          salt ? PGP_SALT_SIZE : 0);
 }
+#endif
 
 size_t
 pgp_s2k_decode_iterations(uint8_t c)

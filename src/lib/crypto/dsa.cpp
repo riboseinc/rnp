@@ -81,6 +81,7 @@
 #include <rnp/rnp_def.h>
 #include "dsa.h"
 #include "hash.h"
+#include "bn.h"
 #include "utils.h"
 
 #define DSA_MAX_Q_BITLEN 256

@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2017-2018 Ribose Inc.
+ * Copyright (c) 2017-2021 Ribose Inc.
  * Copyright (c) 2012 Alistair Crooks <agc@NetBSD.org>
  * All rights reserved.
  *
@@ -29,40 +29,36 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include "config.h"
+#include "mpi.h"
 
+#if defined(CRYPTO_BACKEND_OPENSSL)
+#include <openssl/bn.h>
+
+#define bignum_t BIGNUM
+#elif defined(CRYPTO_BACKEND_BOTAN)
 typedef struct botan_mp_struct *botan_mp_t;
-
-/*
- * bignum_t struct
- */
 typedef struct bignum_t_st {
     botan_mp_t mp;
 } bignum_t;
 
 #define BN_HANDLE(x) ((x).mp)
 #define BN_HANDLE_PTR(x) ((x)->mp)
+#else
+#error "Unknown crypto backend."
+#endif
 
 /*********************************/
 
 bignum_t *bn_new(void);
 void      bn_free(bignum_t * /*a*/);
 
-bignum_t *bn_bin2bn(const uint8_t * /*buf*/, int /*size*/, bignum_t * /*bn*/);
-int       bn_bn2bin(const bignum_t * /*a*/, unsigned char * /*b*/);
+int bn_bn2bin(const bignum_t * /*a*/, unsigned char * /*b*/);
 
-/*
- * @param a Initialized bignum_t structure
- * @param bits [out] bitlength of a
- *
- * @returns true on success, otherwise false
- */
-bool bn_num_bits(const bignum_t *a, size_t *bits);
-/*
- * @param a Initialized bignum_t structure
- * @param bytes [out] byte length of a
- *
- * @returns true on success, otherwise false
- */
-bool bn_num_bytes(const bignum_t *a, size_t *bytes);
+bignum_t *mpi2bn(const pgp_mpi_t *val);
+
+bool bn2mpi(const bignum_t *bn, pgp_mpi_t *val);
+
+size_t bn_num_bytes(const bignum_t &a);
 
 #endif

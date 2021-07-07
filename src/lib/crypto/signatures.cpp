@@ -77,12 +77,18 @@ signature_init(const pgp_key_material_t *key, pgp_hash_alg_t hash_alg, pgp_hash_
     }
 
     if (key->alg == PGP_PKA_SM2) {
+#if defined(ENABLE_SM2)
         rnp_result_t r = sm2_compute_za(&key->ec, hash);
         if (r != RNP_SUCCESS) {
             pgp_hash_finish(hash, NULL);
             RNP_LOG("failed to compute SM2 ZA field");
             return r;
         }
+#else
+        pgp_hash_finish(hash, NULL);
+        RNP_LOG("SM2 ZA computation not available");
+        return RNP_ERROR_NOT_IMPLEMENTED;
+#endif
     }
     return RNP_SUCCESS;
 }
@@ -150,10 +156,14 @@ signature_calculate(pgp_signature_t *         sig,
     case PGP_PKA_ECDSA:
     case PGP_PKA_SM2: {
         const ec_curve_desc_t *curve = get_curve_desc(seckey->ec.curve);
-
         if (!curve) {
             RNP_LOG("Unknown curve");
             ret = RNP_ERROR_BAD_PARAMETERS;
+            break;
+        }
+        if (!curve_supported(seckey->ec.curve)) {
+            RNP_LOG("EC sign: curve %s is not supported.", curve->pgp_name);
+            ret = RNP_ERROR_NOT_SUPPORTED;
             break;
         }
         /* "-2" because ECDSA on P-521 must work with SHA-512 digest */
@@ -164,16 +174,21 @@ signature_calculate(pgp_signature_t *         sig,
         }
 
         if (sig->palg == PGP_PKA_SM2) {
+#if defined(ENABLE_SM2)
             ret = sm2_sign(rng, &material.ecc, hash_alg, hval, hlen, &seckey->ec);
             if (ret) {
                 RNP_LOG("SM2 signing failed");
             }
-        } else {
-            ret = ecdsa_sign(rng, &material.ecc, hash_alg, hval, hlen, &seckey->ec);
-            if (ret) {
-                RNP_LOG("ECDSA signing failed");
-                break;
-            }
+#else
+            RNP_LOG("SM2 signing is not available.");
+            ret = RNP_ERROR_NOT_IMPLEMENTED;
+#endif
+            break;
+        }
+
+        ret = ecdsa_sign(rng, &material.ecc, hash_alg, hval, hlen, &seckey->ec);
+        if (ret) {
+            RNP_LOG("ECDSA signing failed");
         }
         break;
     }
@@ -242,7 +257,12 @@ signature_validate(const pgp_signature_t *sig, const pgp_key_material_t *key, pg
         ret = eddsa_verify(&material.ecc, hval, hlen, &key->ec);
         break;
     case PGP_PKA_SM2:
+#if defined(ENABLE_SM2)
         ret = sm2_verify(&material.ecc, hash_alg, hval, hlen, &key->ec);
+#else
+        RNP_LOG("SM2 verification is not available.");
+        ret = RNP_ERROR_NOT_IMPLEMENTED;
+#endif
         break;
     case PGP_PKA_RSA:
     case PGP_PKA_RSA_SIGN_ONLY:
@@ -253,6 +273,11 @@ signature_validate(const pgp_signature_t *sig, const pgp_key_material_t *key, pg
         ret = RNP_ERROR_SIGNATURE_INVALID;
         break;
     case PGP_PKA_ECDSA:
+        if (!curve_supported(key->ec.curve)) {
+            RNP_LOG("ECDSA verify: curve %d is not supported.", (int) key->ec.curve);
+            ret = RNP_ERROR_NOT_SUPPORTED;
+            break;
+        }
         ret = ecdsa_verify(&material.ecc, hash_alg, hval, hlen, &key->ec);
         break;
     case PGP_PKA_ELGAMAL:

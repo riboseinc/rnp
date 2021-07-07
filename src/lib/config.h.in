@@ -50,6 +50,14 @@
 #cmakedefine HAVE__O_BINARY
 #cmakedefine HAVE__TEMPNAM
 
+#cmakedefine CRYPTO_BACKEND_BOTAN
+#cmakedefine CRYPTO_BACKEND_OPENSSL
+
+#cmakedefine ENABLE_SM2
+#cmakedefine ENABLE_AEAD
+#cmakedefine ENABLE_TWOFISH
+#cmakedefine ENABLE_BRAINPOOL
+
 /* Macro _GLIBCXX_USE_CXX11_ABI was first introduced with GCC 5.0, which
  * we assume to be bundled with a sane implementation of std::regex. */
 #if !defined(__GNUC__) || defined(_GLIBCXX_USE_CXX11_ABI) || defined(MSVC)

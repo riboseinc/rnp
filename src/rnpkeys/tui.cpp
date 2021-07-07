@@ -95,9 +95,6 @@ is_rsa_keysize_supported(uint32_t keysize)
 static const char *
 ask_curve_name(FILE *input_fp)
 {
-    const char *              result = NULL;
-    long                      val = 0;
-    bool                      ok = false;
     std::vector<const char *> curves;
     static const char *const  known_curves[] = {
       "NIST P-256",
@@ -124,17 +121,29 @@ ask_curve_name(FILE *input_fp)
         return NULL;
     }
     const size_t ccount = curves.size();
+    if (!ccount) {
+        return NULL;
+    }
+    bool        ok = false;
+    const char *result = NULL;
+    int         attempts = 0;
     do {
+        if (attempts >= 10) {
+            printf("Too many attempts. Aborting.\n");
+            return NULL;
+        }
         printf("Please select which elliptic curve you want:\n");
         for (size_t i = 0; i < ccount; i++) {
             printf("\t(%zu) %s\n", i + 1, curves[i]);
         }
         printf("(default %s)> ", DEFAULT_CURVE);
+        long val = 0;
         ok = rnp_secure_get_long_from_fd(input_fp, &val, true) && (val > 0) &&
              (val <= (long) ccount);
         if (ok) {
             result = curves[val - 1];
         }
+        attempts++;
     } while (!ok);
 
     return result;
@@ -173,7 +182,7 @@ ask_dsa_bitlen(FILE *input_fp)
     return result;
 }
 
-static void
+static bool
 rnpkeys_ask_generate_params(rnp_cfg &cfg, FILE *input_fp)
 {
     long option = 0;
@@ -217,6 +226,9 @@ rnpkeys_ask_generate_params(rnp_cfg &cfg, FILE *input_fp)
         }
         case 19: {
             const char *curve = ask_curve_name(input_fp);
+            if (!curve) {
+                return false;
+            }
             cfg.set_str(CFG_KG_PRIMARY_ALG, RNP_ALGNAME_ECDSA);
             cfg.set_str(CFG_KG_SUBKEY_ALG, RNP_ALGNAME_ECDH);
             cfg.set_str(CFG_KG_PRIMARY_CURVE, curve);
@@ -242,6 +254,8 @@ rnpkeys_ask_generate_params(rnp_cfg &cfg, FILE *input_fp)
             break;
         }
     } while (!option);
+
+    return true;
 }
 
 bool
@@ -271,8 +285,12 @@ cli_rnp_set_generate_params(rnp_cfg &cfg)
                 }
             }
         }
-        res = res && input;
-        rnpkeys_ask_generate_params(cfg, input);
+        if (!input) {
+            return false;
+        }
+        if (!rnpkeys_ask_generate_params(cfg, input)) {
+            return false;
+        }
         if (input && (input != stdin)) {
             fclose(input);
         }

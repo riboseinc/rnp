@@ -249,7 +249,7 @@ static bool
 curve_str_to_type(const char *str, pgp_curve_t *value)
 {
     *value = find_curve_by_name(str);
-    return *value != PGP_CURVE_MAX;
+    return curve_supported(*value);
 }
 
 static bool
@@ -271,7 +271,16 @@ str_to_cipher(const char *str, pgp_symm_alg_t *cipher)
     if (alg == PGP_SA_UNKNOWN) {
         return false;
     }
-
+#if !defined(ENABLE_SM2)
+    if (alg == PGP_SA_SM4) {
+        return false;
+    }
+#endif
+#if !defined(ENABLE_TWOFISH)
+    if (alg == PGP_SA_TWOFISH) {
+        return false;
+    }
+#endif
     *cipher = alg;
     return true;
 }
@@ -284,7 +293,11 @@ str_to_hash_alg(const char *str, pgp_hash_alg_t *hash_alg)
     if (alg == PGP_HASH_UNKNOWN) {
         return false;
     }
-
+#if !defined(ENABLE_SM2)
+    if (alg == PGP_HASH_SM3) {
+        return false;
+    }
+#endif
     *hash_alg = alg;
     return true;
 }
@@ -297,7 +310,11 @@ str_to_aead_alg(const char *str, pgp_aead_alg_t *aead_alg)
     if (alg == PGP_AEAD_UNKNOWN) {
         return false;
     }
-
+#if !defined(ENABLE_AEAD)
+    if (alg != PGP_AEAD_NONE) {
+        return false;
+    }
+#endif
     *aead_alg = alg;
     return true;
 }
@@ -347,7 +364,11 @@ str_to_pubkey_alg(const char *str, pgp_pubkey_alg_t *pub_alg)
     if (alg == PGP_PKA_NOTHING) {
         return false;
     }
-
+#if !defined(ENABLE_SM2)
+    if (alg == PGP_PKA_SM2) {
+        return false;
+    }
+#endif
     *pub_alg = alg;
     return true;
 }
@@ -1020,18 +1041,36 @@ try {
     rnp_result_t ret = RNP_ERROR_BAD_PARAMETERS;
 
     if (!rnp_strcasecmp(type, RNP_FEATURE_SYMM_ALG)) {
-        ret = json_array_add_map_str(features, symm_alg_map, PGP_SA_IDEA, PGP_SA_SM4);
+        ret = json_array_add_map_str(features, symm_alg_map, PGP_SA_IDEA, PGP_SA_AES_256);
+#if defined(ENABLE_TWOFISH)
+        ret = json_array_add_map_str(features, symm_alg_map, PGP_SA_TWOFISH, PGP_SA_TWOFISH);
+#endif
+        ret = json_array_add_map_str(
+          features, symm_alg_map, PGP_SA_CAMELLIA_128, PGP_SA_CAMELLIA_256);
+#if defined(ENABLE_SM2)
+        ret = json_array_add_map_str(features, symm_alg_map, PGP_SA_SM4, PGP_SA_SM4);
+#endif
     } else if (!rnp_strcasecmp(type, RNP_FEATURE_AEAD_ALG)) {
-        ret = json_array_add_map_str(features, aead_alg_map, PGP_AEAD_EAX, PGP_AEAD_OCB);
+#if defined(ENABLE_AEAD)
+        ret = json_array_add_map_str(features, aead_alg_map, PGP_AEAD_NONE, PGP_AEAD_OCB);
+#else
+        ret = json_array_add_map_str(features, aead_alg_map, PGP_AEAD_NONE, PGP_AEAD_NONE);
+#endif
     } else if (!rnp_strcasecmp(type, RNP_FEATURE_PROT_MODE)) {
         ret = json_array_add_map_str(
           features, cipher_mode_map, PGP_CIPHER_MODE_CFB, PGP_CIPHER_MODE_CFB);
     } else if (!rnp_strcasecmp(type, RNP_FEATURE_PK_ALG)) {
         // workaround to avoid duplicates, maybe there is a better solution
         (void) json_array_add_map_str(features, pubkey_alg_map, PGP_PKA_RSA, PGP_PKA_RSA);
-        ret = json_array_add_map_str(features, pubkey_alg_map, PGP_PKA_DSA, PGP_PKA_SM2);
+        ret = json_array_add_map_str(features, pubkey_alg_map, PGP_PKA_DSA, PGP_PKA_EDDSA);
+#if defined(ENABLE_SM2)
+        ret = json_array_add_map_str(features, pubkey_alg_map, PGP_PKA_SM2, PGP_PKA_SM2);
+#endif
     } else if (!rnp_strcasecmp(type, RNP_FEATURE_HASH_ALG)) {
-        ret = json_array_add_map_str(features, hash_alg_map, PGP_HASH_MD5, PGP_HASH_SM3);
+        ret = json_array_add_map_str(features, hash_alg_map, PGP_HASH_MD5, PGP_HASH_SHA3_512);
+#if defined(ENABLE_SM2)
+        ret = json_array_add_map_str(features, hash_alg_map, PGP_HASH_SM3, PGP_HASH_SM3);
+#endif
     } else if (!rnp_strcasecmp(type, RNP_FEATURE_COMP_ALG)) {
         ret = json_array_add_map_str(features, compress_alg_map, PGP_C_NONE, PGP_C_BZIP2);
     } else if (!rnp_strcasecmp(type, RNP_FEATURE_CURVE)) {
@@ -1041,6 +1080,9 @@ try {
             if (!desc) {
                 ret = RNP_ERROR_BAD_STATE;
                 goto done;
+            }
+            if (!desc->supported) {
+                continue;
             }
             if (!array_add_element_json(features, json_object_new_string(desc->pgp_name))) {
                 ret = RNP_ERROR_OUT_OF_MEMORY;
@@ -2399,7 +2441,7 @@ try {
     }
     pgp_symm_alg_t symm_alg = PGP_SA_UNKNOWN;
     if (!str_to_cipher(s2k_cipher, &symm_alg)) {
-        FFI_LOG(op->ffi, "Invalid cipher: %s", s2k_hash);
+        FFI_LOG(op->ffi, "Invalid cipher: %s", s2k_cipher);
         return RNP_ERROR_BAD_PARAMETERS;
     }
     try {

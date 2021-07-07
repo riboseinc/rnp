@@ -71,9 +71,16 @@ TEST_F(rnp_tests, hash_test_success)
       "0E116E9192AF3C91A7EC57647E3934057340B4CF408D5A56592F8274EEC53F0"};
 
     for (int i = 0; hash_algs[i] != PGP_HASH_UNKNOWN; ++i) {
-        assert_int_equal(1, pgp_hash_create(&hash, hash_algs[i]));
+#if !defined(ENABLE_SM2)
+        if (hash_algs[i] == PGP_HASH_SM3) {
+            assert_false(pgp_hash_create(&hash, hash_algs[i]));
+            size_t hash_size = pgp_digest_length(hash_algs[i]);
+            assert_int_equal(hash_size * 2, strlen(hash_alg_expected_outputs[i]));
+            continue;
+        }
+#endif
+        assert_true(pgp_hash_create(&hash, hash_algs[i]));
         size_t hash_size = pgp_digest_length(hash_algs[i]);
-
         assert_int_equal(hash_size * 2, strlen(hash_alg_expected_outputs[i]));
 
         pgp_hash_add(&hash, test_input, 1);
@@ -374,6 +381,7 @@ TEST_F(rnp_tests, ecdh_decryptionNegativeCases)
     ecdh_key1.material.ec.key_wrap_alg = (pgp_symm_alg_t) key_wrapping_alg;
 }
 
+#if defined(ENABLE_SM2)
 TEST_F(rnp_tests, sm2_roundtrip)
 {
     uint8_t key[27] = {0};
@@ -411,7 +419,9 @@ TEST_F(rnp_tests, sm2_roundtrip)
         }
     }
 }
+#endif
 
+#if defined(ENABLE_SM2)
 TEST_F(rnp_tests, sm2_sm3_signature_test)
 {
     const char *msg = "no backdoors here";
@@ -466,7 +476,9 @@ TEST_F(rnp_tests, sm2_sm3_signature_test)
     assert_int_equal(sm2_verify(&sig, hash_alg, digest, hash_len, &sm2_key), RNP_SUCCESS);
     rng_destroy(&rng);
 }
+#endif
 
+#if defined(ENABLE_SM2)
 TEST_F(rnp_tests, sm2_sha256_signature_test)
 {
     const char *msg = "hi chappy";
@@ -520,6 +532,7 @@ TEST_F(rnp_tests, sm2_sha256_signature_test)
     assert_int_equal(sm2_verify(&sig, hash_alg, digest, hash_len, &sm2_key), RNP_SUCCESS);
     rng_destroy(&rng);
 }
+#endif
 
 TEST_F(rnp_tests, test_dsa_roundtrip)
 {
@@ -809,4 +822,167 @@ TEST_F(rnp_tests, test_validate_key_material)
     key = pgp_key_pkt_t();
 
     rng_destroy(&rng);
+}
+
+TEST_F(rnp_tests, test_sm2_enabled)
+{
+    char *features = NULL;
+    bool  supported = false;
+    /* check whether FFI returns value which corresponds to defines */
+#if defined(ENABLE_SM2)
+    assert_true(sm2_enabled());
+    /* SM2 */
+    assert_rnp_success(rnp_supported_features(RNP_FEATURE_PK_ALG, &features));
+    assert_non_null(features);
+    assert_true(std::string(features).find("SM2") != std::string::npos);
+    rnp_buffer_destroy(features);
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_PK_ALG, "SM2", &supported));
+    assert_true(supported);
+    /* SM3 */
+    assert_rnp_success(rnp_supported_features(RNP_FEATURE_HASH_ALG, &features));
+    assert_non_null(features);
+    assert_true(std::string(features).find("SM3") != std::string::npos);
+    rnp_buffer_destroy(features);
+    supported = false;
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_HASH_ALG, "SM3", &supported));
+    assert_true(supported);
+    /* SM4 */
+    assert_rnp_success(rnp_supported_features(RNP_FEATURE_SYMM_ALG, &features));
+    assert_non_null(features);
+    assert_true(std::string(features).find("SM4") != std::string::npos);
+    rnp_buffer_destroy(features);
+    supported = false;
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_SYMM_ALG, "SM4", &supported));
+    assert_true(supported);
+    /* Curve */
+    assert_rnp_success(rnp_supported_features(RNP_FEATURE_CURVE, &features));
+    assert_non_null(features);
+    assert_true(std::string(features).find("SM2 P-256") != std::string::npos);
+    rnp_buffer_destroy(features);
+    supported = false;
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_CURVE, "SM2 P-256", &supported));
+    assert_true(supported);
+#else
+    assert_false(sm2_enabled());
+    /* SM2 */
+    assert_rnp_success(rnp_supported_features(RNP_FEATURE_PK_ALG, &features));
+    assert_non_null(features);
+    assert_true(std::string(features).find("SM2") == std::string::npos);
+    rnp_buffer_destroy(features);
+    supported = true;
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_PK_ALG, "SM2", &supported));
+    assert_false(supported);
+    /* SM3 */
+    assert_rnp_success(rnp_supported_features(RNP_FEATURE_HASH_ALG, &features));
+    assert_non_null(features);
+    assert_true(std::string(features).find("SM3") == std::string::npos);
+    rnp_buffer_destroy(features);
+    supported = true;
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_HASH_ALG, "SM3", &supported));
+    assert_false(supported);
+    /* SM4 */
+    assert_rnp_success(rnp_supported_features(RNP_FEATURE_SYMM_ALG, &features));
+    assert_non_null(features);
+    assert_true(std::string(features).find("SM4") == std::string::npos);
+    rnp_buffer_destroy(features);
+    supported = true;
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_SYMM_ALG, "SM4", &supported));
+    assert_false(supported);
+    /* Curve */
+    assert_rnp_success(rnp_supported_features(RNP_FEATURE_CURVE, &features));
+    assert_non_null(features);
+    assert_true(std::string(features).find("SM2 P-256") == std::string::npos);
+    rnp_buffer_destroy(features);
+    supported = true;
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_CURVE, "SM2 P-256", &supported));
+    assert_false(supported);
+#endif
+}
+
+TEST_F(rnp_tests, test_aead_enabled)
+{
+    char *features = NULL;
+    bool  supported = false;
+    /* check whether FFI returns value which corresponds to defines */
+#if defined(ENABLE_AEAD)
+    assert_true(aead_eax_enabled());
+    assert_true(aead_ocb_enabled());
+    assert_rnp_success(rnp_supported_features(RNP_FEATURE_AEAD_ALG, &features));
+    assert_non_null(features);
+    assert_true(std::string(features).find("EAX") != std::string::npos);
+    assert_true(std::string(features).find("OCB") != std::string::npos);
+    rnp_buffer_destroy(features);
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_AEAD_ALG, "EAX", &supported));
+    assert_true(supported);
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_AEAD_ALG, "OCB", &supported));
+    assert_true(supported);
+#else
+    assert_false(aead_eax_enabled());
+    assert_false(aead_ocb_enabled());
+    assert_rnp_success(rnp_supported_features(RNP_FEATURE_AEAD_ALG, &features));
+    assert_non_null(features);
+    assert_true(std::string(features).find("EAX") == std::string::npos);
+    assert_true(std::string(features).find("OCB") == std::string::npos);
+    rnp_buffer_destroy(features);
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_AEAD_ALG, "EAX", &supported));
+    assert_false(supported);
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_AEAD_ALG, "OCB", &supported));
+    assert_false(supported);
+#endif
+}
+
+TEST_F(rnp_tests, test_twofish_enabled)
+{
+    char *features = NULL;
+    bool  supported = false;
+    /* check whether FFI returns value which corresponds to defines */
+#if defined(ENABLE_TWOFISH)
+    assert_true(twofish_enabled());
+    assert_rnp_success(rnp_supported_features(RNP_FEATURE_SYMM_ALG, &features));
+    assert_non_null(features);
+    assert_true(std::string(features).find("TWOFISH") != std::string::npos);
+    rnp_buffer_destroy(features);
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_SYMM_ALG, "TWOFISH", &supported));
+    assert_true(supported);
+#else
+    assert_false(twofish_enabled());
+    assert_rnp_success(rnp_supported_features(RNP_FEATURE_SYMM_ALG, &features));
+    assert_non_null(features);
+    assert_true(std::string(features).find("TWOFISH") == std::string::npos);
+    rnp_buffer_destroy(features);
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_SYMM_ALG, "TWOFISH", &supported));
+    assert_false(supported);
+#endif
+}
+
+TEST_F(rnp_tests, test_brainpool_enabled)
+{
+    char *features = NULL;
+    bool  supported = false;
+    /* check whether FFI returns value which corresponds to defines */
+#if defined(ENABLE_BRAINPOOL)
+    assert_true(brainpool_enabled());
+    assert_rnp_success(rnp_supported_features(RNP_FEATURE_CURVE, &features));
+    assert_non_null(features);
+    assert_true(std::string(features).find("brainpool") != std::string::npos);
+    rnp_buffer_destroy(features);
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_CURVE, "brainpoolP256r1", &supported));
+    assert_true(supported);
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_CURVE, "brainpoolP384r1", &supported));
+    assert_true(supported);
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_CURVE, "brainpoolP512r1", &supported));
+    assert_true(supported);
+#else
+    assert_false(brainpool_enabled());
+    assert_rnp_success(rnp_supported_features(RNP_FEATURE_CURVE, &features));
+    assert_non_null(features);
+    assert_true(std::string(features).find("brainpool") == std::string::npos);
+    rnp_buffer_destroy(features);
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_CURVE, "brainpoolP256r1", &supported));
+    assert_false(supported);
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_CURVE, "brainpoolP384r1", &supported));
+    assert_false(supported);
+    assert_rnp_success(rnp_supports_feature(RNP_FEATURE_CURVE, "brainpoolP512r1", &supported));
+    assert_false(supported);
+#endif
 }

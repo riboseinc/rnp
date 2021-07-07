@@ -29,6 +29,7 @@
 #include "sm2.h"
 #include "hash.h"
 #include "utils.h"
+#include "bn.h"
 
 static bool
 sm2_load_public_key(botan_pubkey_t *pubkey, const pgp_ec_key_t *keydata)

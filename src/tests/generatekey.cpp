@@ -88,6 +88,15 @@ done:
     return res;
 }
 
+static bool
+hash_supported(const std::string &hash)
+{
+    if (!sm2_enabled() && lowercase(hash) == "sm3") {
+        return false;
+    }
+    return true;
+}
+
 TEST_F(rnp_tests, rnpkeys_generatekey_testSignature)
 {
     /* Set the UserId = custom value.
@@ -150,6 +159,12 @@ TEST_F(rnp_tests, rnpkeys_generatekey_testSignature)
                 cfg.add_str(CFG_SIGNERS, userId);
 
                 /* Sign the file */
+                if (!hash_supported(hashAlg[i])) {
+                    assert_false(cli_rnp_protect_file(&rnp));
+                    cli_rnp_end(&rnp);
+                    assert_int_equal(rnp_unlink("dummyfile.dat.pgp"), -1);
+                    continue;
+                }
                 assert_true(cli_rnp_protect_file(&rnp));
                 if (pipefd[0] != -1) {
                     close(pipefd[0]);
@@ -196,13 +211,25 @@ TEST_F(rnp_tests, rnpkeys_generatekey_testSignature)
     assert_int_equal(rnp_unlink("dummyfile.dat"), 0);
 }
 
+static bool
+cipher_supported(const std::string &cipher)
+{
+    if (!sm2_enabled() && lowercase(cipher) == "sm4") {
+        return false;
+    }
+    if (!twofish_enabled() && lowercase(cipher) == "twofish") {
+        return false;
+    }
+    return true;
+}
+
 TEST_F(rnp_tests, rnpkeys_generatekey_testEncryption)
 {
     const char *cipherAlg[] = {
-      "BLOWFISH",    "TWOFISH",     "CAST5",       "TRIPLEDES",   "AES128",   "AES192",
-      "AES256",      "CAMELLIA128", "CAMELLIA192", "CAMELLIA256", "blowfish", "twofish",
-      "cast5",       "tripledes",   "aes128",      "aes192",      "aes256",   "camellia128",
-      "camellia192", "camellia256", NULL};
+      "BLOWFISH",    "TWOFISH",     "CAST5",       "TRIPLEDES",   "AES128", "AES192",
+      "AES256",      "CAMELLIA128", "CAMELLIA192", "CAMELLIA256", "SM4",    "blowfish",
+      "twofish",     "cast5",       "tripledes",   "aes128",      "aes192", "aes256",
+      "camellia128", "camellia192", "camellia256", "sm4",         NULL};
 
     cli_rnp_t   rnp = {};
     char        memToEncrypt[] = "A simple test message";
@@ -234,8 +261,12 @@ TEST_F(rnp_tests, rnpkeys_generatekey_testEncryption)
             cfg.set_str(CFG_CIPHER, cipherAlg[i]);
             cfg.add_str(CFG_RECIPIENTS, userid);
             /* Encrypt the file */
-            assert_true(cli_rnp_protect_file(&rnp));
+            bool supported = cipher_supported(cipherAlg[i]);
+            assert_true(cli_rnp_protect_file(&rnp) == supported);
             cli_rnp_end(&rnp);
+            if (!supported) {
+                continue;
+            }
 
             /* Set up rnp again and decrypt the file */
             assert_true(setup_cli_rnp_common(&rnp, RNP_KEYSTORE_GPG, NULL, pipefd));
@@ -290,9 +321,13 @@ TEST_F(rnp_tests, rnpkeys_generatekey_verifySupportedHashAlg)
     for (size_t i = 0; i < ARRAY_SIZE(hashAlg); i++) {
         const char *keystore = keystores[i % ARRAY_SIZE(keystores)];
         /* Setting up rnp again and decrypting memory */
-        printf("keystore: %s\n", keystore);
+        printf("keystore: %s, hashalg %s\n", keystore, hashAlg[i]);
         /* Generate key with specified hash algorithm */
-        assert_true(generate_test_key(keystore, hashAlg[i], hashAlg[i], NULL));
+        bool supported = hash_supported(hashAlg[i]);
+        assert_true(generate_test_key(keystore, hashAlg[i], hashAlg[i], NULL) == supported);
+        if (!supported) {
+            continue;
+        }
         /* Load and check key */
         assert_true(setup_cli_rnp_common(&rnp, keystore, NULL, NULL));
         /* Loading the keyrings */
@@ -715,60 +750,93 @@ TEST_F(rnp_tests, rnpkeys_generatekey_testExpertMode)
     ops.unset(CFG_USERID);
     ops.add_str(CFG_USERID, "expert_ecdsa_bp256");
     assert_true(ask_expert_details(&rnp, ops, "19\n4\n"));
-    assert_true(
-      check_cfg_props(ops, "ECDSA", "ECDH", "brainpoolP256r1", "brainpoolP256r1", 0, 0));
-    assert_true(check_key_props(&rnp,
-                                "expert_ecdsa_bp256",
-                                "ECDSA",
-                                "ECDH",
-                                "brainpoolP256r1",
-                                "brainpoolP256r1",
-                                0,
-                                0,
-                                "SHA256"));
+    if (brainpool_enabled()) {
+        assert_true(
+          check_cfg_props(ops, "ECDSA", "ECDH", "brainpoolP256r1", "brainpoolP256r1", 0, 0));
+        assert_true(check_key_props(&rnp,
+                                    "expert_ecdsa_bp256",
+                                    "ECDSA",
+                                    "ECDH",
+                                    "brainpoolP256r1",
+                                    "brainpoolP256r1",
+                                    0,
+                                    0,
+                                    "SHA256"));
+    } else {
+        /* secp256k1 will be selected instead */
+        assert_true(check_cfg_props(ops, "ECDSA", "ECDH", "secp256k1", "secp256k1", 0, 0));
+        assert_true(check_key_props(&rnp,
+                                    "expert_ecdsa_bp256",
+                                    "ECDSA",
+                                    "ECDH",
+                                    "secp256k1",
+                                    "secp256k1",
+                                    0,
+                                    0,
+                                    "SHA256"));
+    }
     cli_rnp_end(&rnp);
 
     /* ecdsa/ecdh brainpool384 keypair */
     ops.unset(CFG_USERID);
     ops.add_str(CFG_USERID, "expert_ecdsa_bp384");
-    assert_true(ask_expert_details(&rnp, ops, "19\n5\n"));
-    assert_true(
-      check_cfg_props(ops, "ECDSA", "ECDH", "brainpoolP384r1", "brainpoolP384r1", 0, 0));
-    assert_true(check_key_props(&rnp,
-                                "expert_ecdsa_bp384",
-                                "ECDSA",
-                                "ECDH",
-                                "brainpoolP384r1",
-                                "brainpoolP384r1",
-                                0,
-                                0,
-                                "SHA384"));
+    if (brainpool_enabled()) {
+        assert_true(ask_expert_details(&rnp, ops, "19\n5\n"));
+        assert_true(
+          check_cfg_props(ops, "ECDSA", "ECDH", "brainpoolP384r1", "brainpoolP384r1", 0, 0));
+        assert_true(check_key_props(&rnp,
+                                    "expert_ecdsa_bp384",
+                                    "ECDSA",
+                                    "ECDH",
+                                    "brainpoolP384r1",
+                                    "brainpoolP384r1",
+                                    0,
+                                    0,
+                                    "SHA384"));
+    } else {
+        assert_false(ask_expert_details(&rnp, ops, "19\n5\n"));
+    }
     cli_rnp_end(&rnp);
 
     /* ecdsa/ecdh brainpool512 keypair */
     ops.unset(CFG_USERID);
     ops.add_str(CFG_USERID, "expert_ecdsa_bp512");
-    assert_true(ask_expert_details(&rnp, ops, "19\n6\n"));
-    assert_true(
-      check_cfg_props(ops, "ECDSA", "ECDH", "brainpoolP512r1", "brainpoolP512r1", 0, 0));
-    assert_true(check_key_props(&rnp,
-                                "expert_ecdsa_bp512",
-                                "ECDSA",
-                                "ECDH",
-                                "brainpoolP512r1",
-                                "brainpoolP512r1",
-                                0,
-                                0,
-                                "SHA512"));
+    if (brainpool_enabled()) {
+        assert_true(ask_expert_details(&rnp, ops, "19\n6\n"));
+        assert_true(
+          check_cfg_props(ops, "ECDSA", "ECDH", "brainpoolP512r1", "brainpoolP512r1", 0, 0));
+        assert_true(check_key_props(&rnp,
+                                    "expert_ecdsa_bp512",
+                                    "ECDSA",
+                                    "ECDH",
+                                    "brainpoolP512r1",
+                                    "brainpoolP512r1",
+                                    0,
+                                    0,
+                                    "SHA512"));
+    } else {
+        assert_false(ask_expert_details(&rnp, ops, "19\n6\n"));
+    }
     cli_rnp_end(&rnp);
 
     /* ecdsa/ecdh secp256k1 keypair */
     ops.unset(CFG_USERID);
     ops.add_str(CFG_USERID, "expert_ecdsa_p256k1");
-    assert_true(ask_expert_details(&rnp, ops, "19\n7\n"));
-    assert_true(check_cfg_props(ops, "ECDSA", "ECDH", "secp256k1", "secp256k1", 0, 0));
-    assert_true(check_key_props(
-      &rnp, "expert_ecdsa_p256k1", "ECDSA", "ECDH", "secp256k1", "secp256k1", 0, 0, "SHA256"));
+    if (brainpool_enabled()) {
+        assert_true(ask_expert_details(&rnp, ops, "19\n7\n"));
+        assert_true(check_cfg_props(ops, "ECDSA", "ECDH", "secp256k1", "secp256k1", 0, 0));
+        assert_true(check_key_props(&rnp,
+                                    "expert_ecdsa_p256k1",
+                                    "ECDSA",
+                                    "ECDH",
+                                    "secp256k1",
+                                    "secp256k1",
+                                    0,
+                                    0,
+                                    "SHA256"));
+    } else {
+        assert_false(ask_expert_details(&rnp, ops, "19\n7\n"));
+    }
     cli_rnp_end(&rnp);
 
     /* eddsa/x25519 keypair */
@@ -810,10 +878,14 @@ TEST_F(rnp_tests, rnpkeys_generatekey_testExpertMode)
     ops.set_int(CFG_S2K_ITER, 1);
     ops.unset(CFG_USERID);
     ops.add_str(CFG_USERID, "expert_sm2");
-    assert_true(ask_expert_details(&rnp, ops, "99\n"));
-    assert_true(check_cfg_props(ops, "SM2", "SM2", NULL, NULL, 0, 0));
-    assert_true(check_key_props(
-      &rnp, "expert_sm2", "SM2", "SM2", "SM2 P-256", "SM2 P-256", 0, 0, "SM3"));
+    if (!sm2_enabled()) {
+        assert_false(ask_expert_details(&rnp, ops, "99\n"));
+    } else {
+        assert_true(ask_expert_details(&rnp, ops, "99\n"));
+        assert_true(check_cfg_props(ops, "SM2", "SM2", NULL, NULL, 0, 0));
+        assert_true(check_key_props(
+          &rnp, "expert_sm2", "SM2", "SM2", "SM2 P-256", "SM2 P-256", 0, 0, "SM3"));
+    }
     cli_rnp_end(&rnp);
 }
 

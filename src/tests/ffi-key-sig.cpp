@@ -1392,3 +1392,20 @@ TEST_F(rnp_tests, test_ffi_remove_signatures)
     rnp_key_handle_destroy(key);
     assert_rnp_success(rnp_ffi_destroy(ffi));
 }
+
+TEST_F(rnp_tests, test_ffi_rsa_small_sig)
+{
+    rnp_ffi_t ffi = NULL;
+    assert_rnp_success(rnp_ffi_create(&ffi, "GPG", "GPG"));
+    assert_true(import_pub_keys(ffi, "data/test_key_validity/rsa_key_small_sig-pub.asc"));
+    rnp_key_handle_t key = NULL;
+    assert_rnp_success(rnp_locate_key(ffi, "keyid", "ED23B0105947F283", &key));
+    rnp_uid_handle_t uid = NULL;
+    assert_rnp_success(rnp_key_get_uid_handle_at(key, 0, &uid));
+    bool valid = false;
+    assert_rnp_success(rnp_uid_is_valid(uid, &valid));
+    assert_true(valid);
+    rnp_uid_handle_destroy(uid);
+    rnp_key_handle_destroy(key);
+    assert_rnp_success(rnp_ffi_destroy(ffi));
+}

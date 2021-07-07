@@ -31,6 +31,8 @@
 #ifndef REPGP_DEF_H_
 #define REPGP_DEF_H_
 
+#include <cstdint>
+
 /************************************/
 /* Packet Tags - RFC4880, 4.2 */
 /************************************/

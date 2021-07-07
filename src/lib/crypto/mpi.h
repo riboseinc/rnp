@@ -27,10 +27,9 @@
 #ifndef RNP_MPI_H_
 #define RNP_MPI_H_
 
-#include <stdint.h>
-#include <stdbool.h>
-#include <ctype.h>
-#include "bn.h"
+#include <cstdint>
+#include <cstdbool>
+#include <cstddef>
 
 /* 16384 bits should be pretty enough for now */
 #define PGP_MPINT_BITS (16384)
@@ -43,10 +42,6 @@ typedef struct pgp_mpi_t {
     uint8_t mpi[PGP_MPINT_SIZE];
     size_t  len;
 } pgp_mpi_t;
-
-bignum_t *mpi2bn(const pgp_mpi_t *val);
-
-bool bn2mpi(bignum_t *bn, pgp_mpi_t *val);
 
 bool mem2mpi(pgp_mpi_t *val, const void *mem, size_t len);
 

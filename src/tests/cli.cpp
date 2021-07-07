@@ -317,22 +317,22 @@ TEST_F(rnp_tests, test_cli_g10_operations)
     assert_true(test_cli_g10_key_encrypt("9853df2f6d297442"));
 
     /* check bp256 key */
-    assert_true(test_cli_g10_key_sign("d0c8a3daf9e0634a"));
-    assert_true(test_cli_g10_key_encrypt("d0c8a3daf9e0634a"));
+    assert_true(test_cli_g10_key_sign("d0c8a3daf9e0634a") == brainpool_enabled());
+    assert_true(test_cli_g10_key_encrypt("d0c8a3daf9e0634a") == brainpool_enabled());
     assert_false(test_cli_g10_key_sign("2edabb94d3055f76"));
-    assert_true(test_cli_g10_key_encrypt("2edabb94d3055f76"));
+    assert_true(test_cli_g10_key_encrypt("2edabb94d3055f76") == brainpool_enabled());
 
     /* check bp384 key */
-    assert_true(test_cli_g10_key_sign("6cf2dce85599ada2"));
-    assert_true(test_cli_g10_key_encrypt("6cf2dce85599ada2"));
+    assert_true(test_cli_g10_key_sign("6cf2dce85599ada2") == brainpool_enabled());
+    assert_true(test_cli_g10_key_encrypt("6cf2dce85599ada2") == brainpool_enabled());
     assert_false(test_cli_g10_key_sign("cff1bb6f16d28191"));
-    assert_true(test_cli_g10_key_encrypt("cff1bb6f16d28191"));
+    assert_true(test_cli_g10_key_encrypt("cff1bb6f16d28191") == brainpool_enabled());
 
     /* check bp512 key */
-    assert_true(test_cli_g10_key_sign("aa5c58d14f7b8f48"));
-    assert_true(test_cli_g10_key_encrypt("aa5c58d14f7b8f48"));
+    assert_true(test_cli_g10_key_sign("aa5c58d14f7b8f48") == brainpool_enabled());
+    assert_true(test_cli_g10_key_encrypt("aa5c58d14f7b8f48") == brainpool_enabled());
     assert_false(test_cli_g10_key_sign("20cdaa1482ba79ce"));
-    assert_true(test_cli_g10_key_encrypt("20cdaa1482ba79ce"));
+    assert_true(test_cli_g10_key_encrypt("20cdaa1482ba79ce") == brainpool_enabled());
 
     /* check secp256k1 key */
     assert_true(test_cli_g10_key_sign("3ea5bb6f9692c1a0"));

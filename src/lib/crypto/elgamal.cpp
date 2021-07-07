@@ -82,6 +82,7 @@
 #include <rnp/rnp_def.h>
 #include "elgamal.h"
 #include "utils.h"
+#include "bn.h"
 
 // Max supported key byte size
 #define ELGAMAL_MAX_P_BYTELEN BITS_TO_BYTES(PGP_MPINT_BITS)
@@ -290,7 +291,6 @@ elgamal_generate(rng_t *rng, pgp_eg_key_t *key, size_t keybits)
     bignum_t *      g = bn_new();
     bignum_t *      y = bn_new();
     bignum_t *      x = bn_new();
-    size_t          ybytes = 0;
 
     if (!p || !g || !y || !x) {
         ret = RNP_ERROR_OUT_OF_MEMORY;
@@ -304,12 +304,11 @@ start:
         goto end;
     }
 
-    if (botan_privkey_get_field(BN_HANDLE_PTR(y), key_priv, "y") ||
-        !bn_num_bytes(y, &ybytes)) {
+    if (botan_privkey_get_field(BN_HANDLE_PTR(y), key_priv, "y")) {
         RNP_LOG("Failed to obtain public key");
         goto end;
     }
-    if (ybytes < BITS_TO_BYTES(keybits)) {
+    if (bn_num_bytes(*y) < BITS_TO_BYTES(keybits)) {
         RNP_DLOG("Generated ElGamal key has too few bits - retrying");
         botan_privkey_destroy(key_priv);
         goto start;

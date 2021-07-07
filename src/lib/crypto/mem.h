@@ -27,13 +27,23 @@
 #ifndef CRYPTO_MEM_H_
 #define CRYPTO_MEM_H_
 
+#include "config.h"
 #include <array>
+#include <vector>
+#if defined(CRYPTO_BACKEND_BOTAN)
 #include <botan/secmem.h>
 #include <botan/ffi.h>
+#elif defined(CRYPTO_BACKEND_OPENSSL)
+#include <openssl/crypto.h>
+#endif
 
 namespace rnp {
 
+#if defined(CRYPTO_BACKEND_BOTAN)
 template <typename T> using secure_vector = Botan::secure_vector<T>;
+#else
+template <typename T> using secure_vector = std::vector<T>;
+#endif
 
 template <typename T, std::size_t N> struct secure_array {
   private:
@@ -71,7 +81,13 @@ template <typename T, std::size_t N> struct secure_array {
 
     ~secure_array()
     {
+#if defined(CRYPTO_BACKEND_BOTAN)
         botan_scrub_mem(&data_[0], sizeof(data_));
+#elif defined(CRYPTO_BACKEND_OPENSSL)
+        OPENSSL_cleanse(&data_[0], sizeof(data_));
+#else
+#error "Unsupported crypto backend."
+#endif
     }
 };
 

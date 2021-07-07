@@ -170,7 +170,22 @@ TEST_F(rnp_tests, test_ffi_encrypt_pass)
     // add password (using all defaults)
     assert_rnp_success(rnp_op_encrypt_add_password(op, "pass1", NULL, 0, NULL));
     // add password
-    assert_rnp_success(rnp_op_encrypt_add_password(op, "pass2", "SM3", 12345, "TWOFISH"));
+    if (!sm2_enabled() && !twofish_enabled()) {
+        assert_rnp_failure(rnp_op_encrypt_add_password(op, "pass2", "SM3", 12345, "TWOFISH"));
+        assert_rnp_failure(
+          rnp_op_encrypt_add_password(op, "pass2", "SHA256", 12345, "TWOFISH"));
+        assert_rnp_success(
+          rnp_op_encrypt_add_password(op, "pass2", "SHA256", 12345, "BLOWFISH"));
+    } else if (!sm2_enabled() && twofish_enabled()) {
+        assert_rnp_failure(rnp_op_encrypt_add_password(op, "pass2", "SM3", 12345, "TWOFISH"));
+        assert_rnp_success(
+          rnp_op_encrypt_add_password(op, "pass2", "SHA256", 12345, "TWOFISH"));
+    } else if (sm2_enabled() && !twofish_enabled()) {
+        assert_rnp_failure(rnp_op_encrypt_add_password(op, "pass2", "SM3", 12345, "TWOFISH"));
+        assert_rnp_success(rnp_op_encrypt_add_password(op, "pass2", "SM3", 12345, "BLOWFISH"));
+    } else {
+        assert_rnp_success(rnp_op_encrypt_add_password(op, "pass2", "SM3", 12345, "TWOFISH"));
+    }
     // set the data encryption cipher
     assert_rnp_success(rnp_op_encrypt_set_cipher(op, "CAST5"));
     // execute the operation
@@ -221,8 +236,7 @@ TEST_F(rnp_tests, test_ffi_encrypt_pass)
     assert_non_null(input);
     assert_rnp_success(rnp_output_to_path(&output, "decrypted"));
     assert_non_null(output);
-    assert_int_equal(
-      RNP_SUCCESS,
+    assert_rnp_success(
       rnp_ffi_set_pass_provider(ffi, ffi_string_password_provider, (void *) "pass1"));
     assert_rnp_success(rnp_decrypt(ffi, input, output));
     // cleanup
@@ -281,7 +295,19 @@ TEST_F(rnp_tests, test_ffi_encrypt_pass_provider)
     assert_rnp_success(rnp_ffi_set_pass_provider(ffi, getpasscb_inc, &pswdnum));
     assert_rnp_success(rnp_op_encrypt_add_password(op, NULL, NULL, 0, NULL));
     // add another password with different encryption parameters
-    assert_rnp_success(rnp_op_encrypt_add_password(op, NULL, "SM3", 12345, "TWOFISH"));
+    if (!sm2_enabled() && !twofish_enabled()) {
+        assert_rnp_failure(rnp_op_encrypt_add_password(op, NULL, "SM3", 12345, "TWOFISH"));
+        assert_rnp_failure(rnp_op_encrypt_add_password(op, NULL, "SHA256", 12345, "TWOFISH"));
+        assert_rnp_success(rnp_op_encrypt_add_password(op, NULL, "SHA256", 12345, "BLOWFISH"));
+    } else if (!sm2_enabled() && twofish_enabled()) {
+        assert_rnp_failure(rnp_op_encrypt_add_password(op, NULL, "SM3", 12345, "TWOFISH"));
+        assert_rnp_success(rnp_op_encrypt_add_password(op, NULL, "SHA256", 12345, "TWOFISH"));
+    } else if (sm2_enabled() && !twofish_enabled()) {
+        assert_rnp_failure(rnp_op_encrypt_add_password(op, NULL, "SM3", 12345, "TWOFISH"));
+        assert_rnp_success(rnp_op_encrypt_add_password(op, NULL, "SM3", 12345, "BLOWFISH"));
+    } else {
+        assert_rnp_success(rnp_op_encrypt_add_password(op, NULL, "SM3", 12345, "TWOFISH"));
+    }
     // set the data encryption cipher
     assert_rnp_success(rnp_op_encrypt_set_cipher(op, "CAMELLIA256"));
     // execute the operation
@@ -854,5 +880,27 @@ TEST_F(rnp_tests, test_ffi_encrypt_pk_subkey_selection)
     rnp_input_destroy(input);
     rnp_output_destroy(output);
 
+    rnp_ffi_destroy(ffi);
+}
+
+TEST_F(rnp_tests, test_ffi_decrypt_small_rsa)
+{
+    rnp_ffi_t   ffi = NULL;
+    const char *plaintext = "data1";
+
+    assert_rnp_success(rnp_ffi_create(&ffi, "GPG", "GPG"));
+    assert_true(import_all_keys(ffi, "data/test_key_validity/rsa_key_small_sig-sec.asc"));
+    rnp_input_t input = NULL;
+    assert_rnp_success(rnp_input_from_path(&input, "data/test_messages/data.enc.small-rsa"));
+    rnp_output_t output = NULL;
+    assert_rnp_success(rnp_output_to_memory(&output, 0));
+    assert_rnp_success(rnp_decrypt(ffi, input, output));
+    size_t   len = 0;
+    uint8_t *buf = NULL;
+    assert_rnp_success(rnp_output_memory_get_buf(output, &buf, &len, false));
+    assert_int_equal(len, 5);
+    assert_int_equal(memcmp(plaintext, buf, 5), 0);
+    assert_rnp_success(rnp_input_destroy(input));
+    assert_rnp_success(rnp_output_destroy(output));
     rnp_ffi_destroy(ffi);
 }

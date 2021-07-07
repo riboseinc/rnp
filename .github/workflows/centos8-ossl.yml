@@ -1,0 +1,73 @@
+name: centos8-openssl
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - 'release/**'
+
+env:
+  CORES: 2
+  CODECOV_TOKEN: dbecf176-ea3f-4832-b743-295fd71d0fad
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
+  LC_LANG: C.UTF-8
+  USE_STATIC_DEPENDENCIES: yes
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    container:
+      image: centos:8
+    timeout-minutes: 70
+    strategy:
+      matrix:
+        env:
+          - BUILD_MODE: normal
+            CRYPTO_BACKEND: openssl
+            RNP_TESTS: rnp_tests
+          - BUILD_MODE: sanitize
+            CRYPTO_BACKEND: openssl
+            RNP_TESTS: rnp_tests
+    env: ${{ matrix.env }}
+    continue-on-error: true
+    steps:
+      - run: |
+          yum -y install git
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Add rnpuser
+        run: |
+          useradd rnpuser
+          yum -y -q install sudo
+          echo -e "rnpuser\tALL=(ALL)\tNOPASSWD:\tALL" > /etc/sudoers.d/rnpuser
+          echo -e "rnpuser\tsoft\tnproc\tunlimited\n" > /etc/security/limits.d/30-rnpuser.conf
+      - name: Setup environment
+        run: |
+          . ci/gha/setup-env.inc.sh
+          exec su rnpuser -c ci/install_noncacheable_dependencies.sh
+      - name: Cache
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ env.CACHE_DIR }}
+          key: ${{ github.workflow }}-${{ runner.os }}-${{ matrix.env.BUILD_MODE }}-gpg-${{ matrix.env.GPG_VERSION }}-${{ hashFiles('ci/**') }}-${{ hashFiles('.github/workflows/**') }}
+      - name: Build cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -x
+          chown -R rnpuser:rnpuser $PWD
+          exec su rnpuser -c ci/install_cacheable_dependencies.sh
+      - name: Install OpenSSL-devel
+        run: |
+          yum -y install openssl-devel
+          openssl help
+          openssl ecparam -list_curves
+      - name: tests
+        run: |
+          set -x
+          chown -R rnpuser:rnpuser $PWD
+          exec su rnpuser -c ci/run.sh

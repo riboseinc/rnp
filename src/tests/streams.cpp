@@ -1085,16 +1085,18 @@ TEST_F(rnp_tests, test_stream_key_signatures)
     rng_destroy(&rng);
 }
 
-static void
+static bool
 validate_key_sigs(const char *path)
 {
     rnp_key_store_t *pubring = new rnp_key_store_t(PGP_KEY_STORE_GPG, path);
-    assert_true(rnp_key_store_load_from_path(pubring, NULL));
+    bool             valid = rnp_key_store_load_from_path(pubring, NULL);
+    assert_true(valid);
     for (auto &key : pubring->keys) {
         key.validate(*pubring);
-        assert_true(key.valid());
+        valid = valid && key.valid();
     }
     delete pubring;
+    return valid;
 }
 
 TEST_F(rnp_tests, test_stream_key_signature_validate)
@@ -1129,30 +1131,29 @@ TEST_F(rnp_tests, test_stream_key_signature_validate)
     delete pubring;
 
     /* misc key files */
-    const char *key_files[] = {"data/test_stream_key_load/dsa-eg-pub.asc",
-                               "data/test_stream_key_load/dsa-eg-sec.asc",
-                               "data/test_stream_key_load/ecc-25519-pub.asc",
-                               "data/test_stream_key_load/ecc-25519-sec.asc",
-                               "data/test_stream_key_load/ecc-x25519-pub.asc",
-                               "data/test_stream_key_load/ecc-x25519-sec.asc",
-                               "data/test_stream_key_load/ecc-p256-pub.asc",
-                               "data/test_stream_key_load/ecc-p256-sec.asc",
-                               "data/test_stream_key_load/ecc-p384-pub.asc",
-                               "data/test_stream_key_load/ecc-p384-sec.asc",
-                               "data/test_stream_key_load/ecc-p521-pub.asc",
-                               "data/test_stream_key_load/ecc-p521-sec.asc",
-                               "data/test_stream_key_load/ecc-bp256-pub.asc",
-                               "data/test_stream_key_load/ecc-bp256-sec.asc",
-                               "data/test_stream_key_load/ecc-bp384-pub.asc",
-                               "data/test_stream_key_load/ecc-bp384-sec.asc",
-                               "data/test_stream_key_load/ecc-bp512-pub.asc",
-                               "data/test_stream_key_load/ecc-bp512-sec.asc",
-                               "data/test_stream_key_load/ecc-p256k1-pub.asc",
-                               "data/test_stream_key_load/ecc-p256k1-sec.asc"};
-
-    for (size_t i = 0; i < sizeof(key_files) / sizeof(char *); i++) {
-        validate_key_sigs(key_files[i]);
-    }
+    assert_true(validate_key_sigs("data/test_stream_key_load/dsa-eg-pub.asc"));
+    assert_true(validate_key_sigs("data/test_stream_key_load/dsa-eg-sec.asc"));
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-25519-pub.asc"));
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-25519-sec.asc"));
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-x25519-pub.asc"));
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-x25519-sec.asc"));
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-p256-pub.asc"));
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-p256-sec.asc"));
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-p384-pub.asc"));
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-p384-sec.asc"));
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-p521-pub.asc"));
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-p521-sec.asc"));
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-bp256-pub.asc") ==
+                brainpool_enabled());
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-bp256-sec.asc"));
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-bp384-pub.asc") ==
+                brainpool_enabled());
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-bp384-sec.asc"));
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-bp512-pub.asc") ==
+                brainpool_enabled());
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-bp512-sec.asc"));
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-p256k1-pub.asc"));
+    assert_true(validate_key_sigs("data/test_stream_key_load/ecc-p256k1-sec.asc"));
 }
 
 TEST_F(rnp_tests, test_stream_verify_no_key)
@@ -1175,10 +1176,16 @@ TEST_F(rnp_tests, test_stream_verify_no_key)
     /* setup operation context */
     assert_rnp_success(
       rnp_ffi_set_pass_provider(rnp.ffi, ffi_string_password_provider, (void *) "pass1"));
-    /* operation should success if output is not discarded, i.e. operation = decrypt */
     rnpcfg.set_bool(CFG_NO_OUTPUT, false);
-    assert_true(cli_rnp_process_file(&rnp));
-    assert_int_equal(file_size("output.dat"), 4);
+    if (sm2_enabled()) {
+        /* operation should success if output is not discarded, i.e. operation = decrypt */
+        assert_true(cli_rnp_process_file(&rnp));
+        assert_int_equal(file_size("output.dat"), 4);
+    } else {
+        /* operation should fail */
+        assert_false(cli_rnp_process_file(&rnp));
+        assert_int_equal(file_size("output.dat"), -1);
+    }
     /* try second password */
     assert_rnp_success(
       rnp_ffi_set_pass_provider(rnp.ffi, ffi_string_password_provider, (void *) "pass2"));

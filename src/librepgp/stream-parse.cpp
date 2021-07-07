@@ -434,6 +434,7 @@ compressed_src_close(pgp_source_t *src)
     src->param = NULL;
 }
 
+#if defined(ENABLE_AEAD)
 static bool
 encrypted_start_aead_chunk(pgp_source_encrypted_param_t *param, size_t idx, bool last)
 {
@@ -588,10 +589,14 @@ encrypted_src_read_aead_part(pgp_source_encrypted_param_t *param)
 
     return res;
 }
+#endif
 
 static bool
 encrypted_src_read_aead(pgp_source_t *src, void *buf, size_t len, size_t *read)
 {
+#if !defined(ENABLE_AEAD)
+    return false;
+#else
     pgp_source_encrypted_param_t *param = (pgp_source_encrypted_param_t *) src->param;
     size_t                        cbytes;
     size_t                        left = len;
@@ -623,6 +628,7 @@ encrypted_src_read_aead(pgp_source_t *src, void *buf, size_t len, size_t *read)
 
     *read = len - left;
     return true;
+#endif
 }
 
 static bool
@@ -737,7 +743,9 @@ encrypted_src_close(pgp_source_t *src)
     }
 
     if (param->aead) {
+#if defined(ENABLE_AEAD)
         pgp_cipher_aead_destroy(&param->decrypt);
+#endif
     } else {
         pgp_cipher_cfb_finish(&param->decrypt);
     }
@@ -1339,6 +1347,10 @@ error:
 static bool
 encrypted_start_aead(pgp_source_encrypted_param_t *param, pgp_symm_alg_t alg, uint8_t *key)
 {
+#if !defined(ENABLE_AEAD)
+    RNP_LOG("AEAD is not enabled.");
+    return false;
+#else
     size_t gran;
 
     if (alg != param->aead_hdr.ealg) {
@@ -1358,6 +1370,7 @@ encrypted_start_aead(pgp_source_encrypted_param_t *param, pgp_symm_alg_t alg, ui
     }
 
     return encrypted_start_aead_chunk(param, 0, false);
+#endif
 }
 
 static bool
@@ -1393,6 +1406,7 @@ encrypted_try_key(pgp_source_encrypted_param_t *param,
         }
         break;
     case PGP_PKA_SM2:
+#if defined(ENABLE_SM2)
         declen = decbuf.size();
         err = sm2_decrypt(decbuf.data(), &declen, &encmaterial.sm2, &keymaterial->ec);
         if (err != RNP_SUCCESS) {
@@ -1400,6 +1414,10 @@ encrypted_try_key(pgp_source_encrypted_param_t *param,
             return false;
         }
         break;
+#else
+        RNP_LOG("SM2 decryption is not available.");
+        return false;
+#endif
     case PGP_PKA_ELGAMAL:
     case PGP_PKA_ELGAMAL_ENCRYPT_OR_SIGN: {
         const rnp_result_t ret = elgamal_decrypt_pkcs1(
@@ -1411,6 +1429,10 @@ encrypted_try_key(pgp_source_encrypted_param_t *param,
         break;
     }
     case PGP_PKA_ECDH: {
+        if (!curve_supported(keymaterial->ec.curve)) {
+            RNP_LOG("ECDH decrypt: curve %d is not supported.", (int) keymaterial->ec.curve);
+            return false;
+        }
         pgp_fingerprint_t fingerprint;
         if (pgp_fingerprint(fingerprint, *seckey)) {
             RNP_LOG("ECDH fingerprint calculation failed");
@@ -1468,6 +1490,7 @@ encrypted_try_key(pgp_source_encrypted_param_t *param,
     return res;
 }
 
+#if defined(ENABLE_AEAD)
 static bool
 encrypted_sesk_set_ad(pgp_crypt_t *crypt, pgp_sk_sesskey_t *skey)
 {
@@ -1482,6 +1505,7 @@ encrypted_sesk_set_ad(pgp_crypt_t *crypt, pgp_sk_sesskey_t *skey)
     RNP_DHEX("sesk ad: ", ad_data, 4);
     return pgp_cipher_aead_set_ad(crypt, ad_data, 4);
 }
+#endif
 
 static int
 encrypted_try_password(pgp_source_encrypted_param_t *param, const char *password)
@@ -1525,6 +1549,9 @@ encrypted_try_password(pgp_source_encrypted_param_t *param, const char *password
             }
             keyavail = true;
         } else if (skey.version == PGP_SKSK_V5) {
+#if !defined(ENABLE_AEAD)
+            continue;
+#else
             /* v5 AEAD-encrypted session key */
             size_t  taglen = pgp_cipher_aead_tag_len(skey.aalg);
             uint8_t nonce[PGP_AEAD_MAX_NONCE_LEN];
@@ -1567,6 +1594,7 @@ encrypted_try_password(pgp_source_encrypted_param_t *param, const char *password
             if (!keyavail || !decres) {
                 continue;
             }
+#endif
         } else {
             continue;
         }
@@ -1585,6 +1613,11 @@ encrypted_try_password(pgp_source_encrypted_param_t *param, const char *password
             param->handler->on_decryption_start(NULL, &skey, param->handler->param);
         }
         return 1;
+    }
+
+    if (param->aead && pgp_block_size(param->aead_hdr.ealg)) {
+        /* we know aead symm alg even if we wasn't able to start decryption */
+        param->salg = param->aead_hdr.ealg;
     }
 
     if (!keyavail) {
@@ -2076,18 +2109,18 @@ init_encrypted_src(pgp_parse_handler_t *handler, pgp_source_t *src, pgp_source_t
         }
     }
 
+    /* report decryption start to the handler */
+    if (handler->on_decryption_info) {
+        handler->on_decryption_info(
+          param->has_mdc, param->aead_hdr.aalg, param->salg, handler->param);
+    }
+
     if (!have_key) {
         RNP_LOG("failed to obtain decrypting key or password");
         if (!errcode) {
             errcode = RNP_ERROR_NO_SUITABLE_KEY;
         }
         goto finish;
-    }
-
-    /* report decryption start to the handler */
-    if (handler->on_decryption_info) {
-        handler->on_decryption_info(
-          param->has_mdc, param->aead_hdr.aalg, param->salg, handler->param);
     }
     errcode = RNP_SUCCESS;
 finish:

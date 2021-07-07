@@ -35,15 +35,20 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include "config.h"
 
 enum { RNG_DRBG, RNG_SYSTEM };
-typedef uint8_t                  rng_type_t;
+typedef uint8_t rng_type_t;
+#ifdef CRYPTO_BACKEND_BOTAN
 typedef struct botan_rng_struct *botan_rng_t;
+#endif
 
 typedef struct rng_st_t {
+    rng_type_t rng_type;
+#ifdef CRYPTO_BACKEND_BOTAN
     bool        initialized;
-    rng_type_t  rng_type;
     botan_rng_t botan_rng;
+#endif
 } rng_t;
 
 /*
@@ -81,6 +86,7 @@ void rng_destroy(rng_t *ctx);
  **/
 bool rng_get_data(rng_t *ctx, uint8_t *data, size_t len);
 
+#ifdef CRYPTO_BACKEND_BOTAN
 /*
  * @brief   Returns internal handle to botan rng. Returned
  *          handle is always initialized. In case of
@@ -89,6 +95,7 @@ bool rng_get_data(rng_t *ctx, uint8_t *data, size_t len);
  * @param   valid pointer to rng_t object
  */
 struct botan_rng_struct *rng_handle(rng_t *);
+#endif
 
 /*
  * @brief   Initializes RNG_SYSTEM and generates random data.

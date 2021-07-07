@@ -35,23 +35,6 @@
 /* the bignum_t API tends to have more const poisoning */
 /* these wrappers also check the arguments passed for sanity */
 
-bignum_t *
-bn_bin2bn(const uint8_t *data, int len, bignum_t *ret)
-{
-    assert(data);
-    if (!data) {
-        RNP_LOG("NULL data.");
-        return NULL;
-    }
-    if (!ret) {
-        ret = bn_new();
-    }
-    if (!ret) {
-        return NULL;
-    }
-    return !botan_mp_from_bin(ret->mp, data, len) ? ret : NULL;
-}
-
 /* store in unsigned [big endian] format */
 int
 bn_bn2bin(const bignum_t *a, unsigned char *b)
@@ -60,6 +43,37 @@ bn_bn2bin(const bignum_t *a, unsigned char *b)
         return -1;
     }
     return botan_mp_to_bin(a->mp, b);
+}
+
+bignum_t *
+mpi2bn(const pgp_mpi_t *val)
+{
+    assert(val);
+    if (!val) {
+        RNP_LOG("NULL val.");
+        return NULL;
+    }
+    bignum_t *res = bn_new();
+    if (!res) {
+        return NULL;
+    }
+    if (botan_mp_from_bin(res->mp, val->mpi, val->len)) {
+        bn_free(res);
+        res = NULL;
+    }
+    return res;
+}
+
+bool
+bn2mpi(const bignum_t *bn, pgp_mpi_t *val)
+{
+    val->len = bn_num_bytes(*bn);
+    if (val->len > PGP_MPINT_SIZE) {
+        RNP_LOG("Too large MPI.");
+        val->len = 0;
+        return false;
+    }
+    return bn_bn2bin(bn, val->mpi) == 0;
 }
 
 bignum_t *
@@ -82,18 +96,12 @@ bn_free(bignum_t *a)
     }
 }
 
-bool
-bn_num_bits(const bignum_t *a, size_t *bits)
+size_t
+bn_num_bytes(const bignum_t &a)
 {
-    return a && !botan_mp_num_bits(a->mp, bits);
-}
-
-bool
-bn_num_bytes(const bignum_t *a, size_t *bits)
-{
-    if (bn_num_bits(a, bits)) {
-        *bits = BITS_TO_BYTES(*bits);
-        return true;
+    size_t bytes = 0;
+    if (botan_mp_num_bits(a.mp, &bytes)) {
+        RNP_LOG("botan_mp_num_bits failed.");
     }
-    return false;
+    return BITS_TO_BYTES(bytes);
 }

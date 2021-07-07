@@ -55,6 +55,11 @@ option(ENABLE_SANITIZERS "Enable ASan and other sanitizers.")
 option(ENABLE_FUZZERS "Enable fuzz targets.")
 option(DOWNLOAD_GTEST "Download Googletest" On)
 option(DOWNLOAD_RUBYRNP "Download ruby-rnp and run related tests." On)
+# crypto components
+option(ENABLE_SM2 "Enable SM2/SM3/SM4 algorithms support." On)
+option(ENABLE_AEAD "Enable AEAD ciphers support." On)
+option(ENABLE_TWOFISH "Enable Twofish cipher support." On)
+option(ENABLE_BRAINPOOL "Enable Brainpool curves support." On)
 
 # tri-state options
 set(TRISTATE_VALUES On Off Auto)
@@ -74,6 +79,38 @@ if (NOT CMAKE_BUILD_TYPE)
     "Build type. Options are: None Debug Release RelWithDebInfo MinSizeRel."
     FORCE
   )
+endif()
+
+# crypto backend
+if (NOT CRYPTO_BACKEND)
+  set(CRYPTO_BACKEND "botan" CACHE STRING
+    "Crypto backend. Possible values are botan and openssl (under development, only for debug builds). Default is botan."
+    FORCE
+  )
+endif()
+if(CRYPTO_BACKEND STREQUAL "botan")
+  # Default value;
+  set(CRYPTO_BACKEND_BOTAN 1)
+elseif(CRYPTO_BACKEND STREQUAL "openssl")
+  # Do not allow OpenSSL backend in release builds yet.
+  if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message(WARNING "OpenSSL backend should be used only at debug mode and not ready for release yet!")
+  endif()
+  # Disable all unsupported features and leave lines below for the future.
+  set(ENABLE_SM2 Off CACHE BOOL "" FORCE)
+  set(ENABLE_AEAD Off CACHE BOOL "" FORCE)
+  set(ENABLE_TWOFISH Off CACHE BOOL "" FORCE)
+  set(ENABLE_BRAINPOOL Off CACHE BOOL "" FORCE)
+  # No SM2 support for OpenSSL yet.
+  if (ENABLE_SM2)
+    message(FATAL_ERROR "OpenSSL backend doesn't support SM2/SM3/SM4 algorithms yet.")
+  endif()
+  if (ENABLE_AEAD)
+    message(FATAL_ERROR "OpenSSL backend doesn't support AEAD ciphers yet.")
+  endif()
+  set(CRYPTO_BACKEND_OPENSSL 1)
+else()
+  message(FATAL_ERROR "Invalid crypto backend: ${CRYPTO_BACKEND}")
 endif()
 
 # set warning flags at the top level

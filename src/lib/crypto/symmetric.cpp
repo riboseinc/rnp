@@ -92,12 +92,12 @@ pgp_sa_to_botan_string(pgp_symm_alg_t alg)
         return "AES-256";
 #endif
 
-#if defined(BOTAN_HAS_SM4)
+#if defined(BOTAN_HAS_SM4) && defined(ENABLE_SM2)
     case PGP_SA_SM4:
         return "SM4";
 #endif
 
-#if defined(BOTAN_HAS_TWOFISH)
+#if defined(BOTAN_HAS_TWOFISH) && defined(ENABLE_TWOFISH)
     case PGP_SA_TWOFISH:
         return "Twofish";
 #endif
@@ -119,6 +119,7 @@ pgp_sa_to_botan_string(pgp_symm_alg_t alg)
     }
 }
 
+#if defined(ENABLE_AEAD)
 static bool
 pgp_aead_to_botan_string(pgp_symm_alg_t ealg, pgp_aead_alg_t aalg, char *buf, size_t len)
 {
@@ -152,6 +153,7 @@ pgp_aead_to_botan_string(pgp_symm_alg_t ealg, pgp_aead_alg_t aalg, char *buf, si
 
     return true;
 }
+#endif
 
 bool
 pgp_cipher_cfb_start(pgp_crypt_t *  crypt,
@@ -462,6 +464,7 @@ pgp_is_sa_supported(pgp_symm_alg_t alg)
     return false;
 }
 
+#if defined(ENABLE_AEAD)
 bool
 pgp_cipher_aead_init(pgp_crypt_t *  crypt,
                      pgp_symm_alg_t ealg,
@@ -509,6 +512,7 @@ pgp_cipher_aead_granularity(pgp_crypt_t *crypt)
 {
     return crypt->aead.granularity;
 }
+#endif
 
 size_t
 pgp_cipher_aead_nonce_len(pgp_aead_alg_t aalg)
@@ -535,6 +539,7 @@ pgp_cipher_aead_tag_len(pgp_aead_alg_t aalg)
     }
 }
 
+#if defined(ENABLE_AEAD)
 bool
 pgp_cipher_aead_set_ad(pgp_crypt_t *crypt, const uint8_t *ad, size_t len)
 {
@@ -655,3 +660,4 @@ pgp_cipher_aead_nonce(pgp_aead_alg_t aalg, const uint8_t *iv, uint8_t *nonce, si
         return 0;
     }
 }
+#endif // ENABLE_AEAD

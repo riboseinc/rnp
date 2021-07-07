@@ -89,6 +89,7 @@ main() {
   [ -v "GTEST_SOURCES" ] && cmakeopts+=(-DGTEST_SOURCES="${GTEST_SOURCES}")
   [ -v "DOWNLOAD_GTEST" ] && cmakeopts+=(-DDOWNLOAD_GTEST="${DOWNLOAD_GTEST}")
   [ -v "DOWNLOAD_RUBYRNP" ] && cmakeopts+=(-DDOWNLOAD_RUBYRNP="${DOWNLOAD_RUBYRNP}")
+  [ -v "CRYPTO_BACKEND" ] && cmakeopts+=(-DCRYPTO_BACKEND="${CRYPTO_BACKEND}")
 
   if [[ "${OS}" = "msys" ]]; then
     cmakeopts+=(-G "MSYS Makefiles")

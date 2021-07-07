@@ -48,7 +48,12 @@ typedef struct pgp_hash_t {
     pgp_hash_alg_t _alg; /* algorithm */
 } pgp_hash_t;
 
+#ifdef CRYPTO_BACKEND_OPENSSL
+const char *pgp_hash_name_openssl(pgp_hash_alg_t hash);
+#endif
+#ifdef CRYPTO_BACKEND_BOTAN
 const char *pgp_hash_name_botan(const pgp_hash_alg_t alg);
+#endif
 
 bool   pgp_hash_create(pgp_hash_t *hash, pgp_hash_alg_t alg);
 bool   pgp_hash_create_crc24(pgp_hash_t *hash);

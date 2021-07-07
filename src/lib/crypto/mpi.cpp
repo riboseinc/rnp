@@ -31,18 +31,6 @@
 #include "mem.h"
 #include "utils.h"
 
-bignum_t *
-mpi2bn(const pgp_mpi_t *val)
-{
-    return bn_bin2bn(val->mpi, val->len, NULL);
-}
-
-bool
-bn2mpi(bignum_t *bn, pgp_mpi_t *val)
-{
-    return bn_num_bytes(bn, &val->len) && (bn_bn2bin(bn, val->mpi) == 0);
-}
-
 size_t
 mpi_bits(const pgp_mpi_t *val)
 {

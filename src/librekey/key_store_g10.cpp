@@ -24,12 +24,12 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <memory>
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
 #include <time.h>
-
-#include <botan/ffi.h>
+#include "config.h"
 
 #include <librepgp/stream-packet.h>
 #include "key_store_pgp.h"
@@ -37,6 +37,7 @@
 
 #include "crypto/common.h"
 #include "crypto/mem.h"
+#include "crypto/cipher.hpp"
 #include "pgp-key.h"
 
 #define G10_CBC_IV_SIZE 16
@@ -51,7 +52,6 @@ typedef struct format_info {
     pgp_symm_alg_t    cipher;
     pgp_cipher_mode_t cipher_mode;
     pgp_hash_alg_t    hash_alg;
-    const char *      botan_cipher_name;
     size_t            cipher_block_size;
     const char *      g10_type;
     size_t            iv_size;
@@ -68,21 +68,18 @@ pgp_key_pkt_t *g10_decrypt_seckey(const uint8_t *      data,
 static const format_info formats[] = {{PGP_SA_AES_128,
                                        PGP_CIPHER_MODE_CBC,
                                        PGP_HASH_SHA1,
-                                       "AES-128/CBC/NoPadding",
                                        16,
                                        "openpgp-s2k3-sha1-aes-cbc",
                                        G10_CBC_IV_SIZE},
                                       {PGP_SA_AES_256,
                                        PGP_CIPHER_MODE_CBC,
                                        PGP_HASH_SHA1,
-                                       "AES-256/CBC/NoPadding",
                                        16,
                                        "openpgp-s2k3-sha1-aes256-cbc",
                                        G10_CBC_IV_SIZE},
                                       {PGP_SA_AES_128,
                                        PGP_CIPHER_MODE_OCB,
                                        PGP_HASH_SHA1,
-                                       "AES-128/OCB/NoPadding",
                                        16,
                                        "openpgp-s2k3-ocb-aes",
                                        G10_OCB_NONCE_SIZE}};
@@ -664,15 +661,15 @@ decrypt_protected_section(const uint8_t *      encrypted_data,
                           const char *         password,
                           s_exp_t *            r_s_exp)
 {
-    const format_info *info = NULL;
-    unsigned           keysize = 0;
-    uint8_t            derived_key[PGP_MAX_KEY_SIZE];
-    uint8_t *          decrypted_data = NULL;
-    size_t             decrypted_data_len = 0;
-    size_t             output_written = 0;
-    size_t             input_consumed = 0;
-    botan_cipher_t     decrypt = NULL;
-    bool               ret = false;
+    const format_info *     info = NULL;
+    unsigned                keysize = 0;
+    uint8_t                 derived_key[PGP_MAX_KEY_SIZE];
+    uint8_t *               decrypted_data = NULL;
+    size_t                  decrypted_data_len = 0;
+    size_t                  output_written = 0;
+    size_t                  input_consumed = 0;
+    std::unique_ptr<Cipher> dec;
+    bool                    ret = false;
 
     const char *decrypted_bytes;
     size_t      s_exp_len;
@@ -714,23 +711,16 @@ decrypt_protected_section(const uint8_t *      encrypted_data,
         RNP_LOG("can't allocate memory");
         goto done;
     }
-    if (botan_cipher_init(&decrypt, info->botan_cipher_name, BOTAN_CIPHER_INIT_FLAG_DECRYPT)) {
-        RNP_LOG("botan_cipher_init failed");
+    dec = Cipher::decryption(info->cipher, info->cipher_mode, 0, true);
+    if (!dec || !dec->set_key(derived_key, keysize) || !dec->set_iv(prot->iv, info->iv_size)) {
         goto done;
     }
-    if (botan_cipher_set_key(decrypt, derived_key, keysize) ||
-        botan_cipher_start(decrypt, prot->iv, info->iv_size)) {
-        goto done;
-    }
-    if (botan_cipher_update(decrypt,
-                            BOTAN_CIPHER_UPDATE_FLAG_FINAL,
-                            decrypted_data,
-                            encrypted_data_len,
-                            &output_written,
-                            encrypted_data,
-                            encrypted_data_len,
-                            &input_consumed)) {
-        RNP_LOG("botan_cipher_update failed");
+    if (!dec->finish(decrypted_data,
+                     encrypted_data_len,
+                     &output_written,
+                     encrypted_data,
+                     encrypted_data_len,
+                     &input_consumed)) {
         goto done;
     }
     decrypted_data_len = output_written;
@@ -755,7 +745,6 @@ done:
     }
     secure_clear(decrypted_data, decrypted_data_len);
     free(decrypted_data);
-    botan_cipher_destroy(decrypt);
     return ret;
 }
 
@@ -1310,19 +1299,19 @@ write_seckey(s_exp_t *s_exp, const pgp_key_pkt_t *key)
 static bool
 write_protected_seckey(s_exp_t *s_exp, pgp_key_pkt_t *seckey, const char *password)
 {
-    bool                  ret = false;
-    const format_info *   format;
-    s_exp_t               raw_s_exp = {0};
-    s_exp_t *             sub_s_exp, *sub_sub_s_exp, *sub_sub_sub_s_exp;
-    pgp_dest_t            raw = {0};
-    uint8_t *             encrypted_data = NULL;
-    botan_cipher_t        encrypt = NULL;
-    unsigned              keysize;
-    uint8_t               checksum[G10_SHA1_HASH_SIZE];
-    uint8_t               derived_key[PGP_MAX_KEY_SIZE];
-    pgp_key_protection_t *prot = &seckey->sec_protection;
-    size_t                encrypted_data_len = 0;
-    size_t                output_written, input_consumed;
+    bool                    ret = false;
+    const format_info *     format;
+    s_exp_t                 raw_s_exp = {0};
+    s_exp_t *               sub_s_exp, *sub_sub_s_exp, *sub_sub_sub_s_exp;
+    pgp_dest_t              raw = {0};
+    uint8_t *               encrypted_data = NULL;
+    std::unique_ptr<Cipher> enc;
+    unsigned                keysize;
+    uint8_t                 checksum[G10_SHA1_HASH_SIZE];
+    uint8_t                 derived_key[PGP_MAX_KEY_SIZE];
+    pgp_key_protection_t *  prot = &seckey->sec_protection;
+    size_t                  encrypted_data_len = 0;
+    size_t                  output_written, input_consumed;
 
     if (prot->s2k.specifier != PGP_S2KS_ITERATED_AND_SALTED) {
         return false;
@@ -1402,20 +1391,17 @@ write_protected_seckey(s_exp_t *s_exp, pgp_key_pkt_t *seckey, const char *passwo
     RNP_DHEX("key", derived_key, keysize);
     RNP_DHEX("raw data", (uint8_t *) mem_dest_get_memory(&raw), raw.writeb);
 
-    if (botan_cipher_init(
-          &encrypt, format->botan_cipher_name, BOTAN_CIPHER_INIT_FLAG_ENCRYPT) ||
-        botan_cipher_set_key(encrypt, derived_key, keysize) ||
-        botan_cipher_start(encrypt, prot->iv, format->iv_size)) {
+    enc = Cipher::encryption(format->cipher, format->cipher_mode, 0, true);
+    if (!enc || !enc->set_key(derived_key, keysize) ||
+        !enc->set_iv(prot->iv, format->iv_size)) {
         goto done;
     }
-    if (botan_cipher_update(encrypt,
-                            BOTAN_CIPHER_UPDATE_FLAG_FINAL,
-                            encrypted_data,
-                            encrypted_data_len,
-                            &output_written,
-                            (uint8_t *) mem_dest_get_memory(&raw),
-                            raw.writeb,
-                            &input_consumed)) {
+    if (!enc->finish(encrypted_data,
+                     encrypted_data_len,
+                     &output_written,
+                     (const uint8_t *) mem_dest_get_memory(&raw),
+                     raw.writeb,
+                     &input_consumed)) {
         goto done;
     }
 
@@ -1441,7 +1427,6 @@ done:
     free(encrypted_data);
     destroy_s_exp(&raw_s_exp);
     dst_close(&raw, true);
-    botan_cipher_destroy(encrypt);
     return ret;
 }
 
