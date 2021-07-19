@@ -10005,6 +10005,72 @@ TEST_F(rnp_tests, test_ffi_key_export_autocrypt)
     rnp_ffi_destroy(ffi);
 }
 
+TEST_F(rnp_tests, test_ffi_key_default_subkey)
+{
+    rnp_ffi_t        ffi = NULL;
+    rnp_key_handle_t primary = NULL;
+    rnp_key_handle_t def_key = NULL;
+    char *           keyid = NULL;
+
+    test_ffi_init(&ffi);
+    assert_rnp_success(rnp_locate_key(ffi, "keyid", "7bc6709b15c23a4a", &primary));
+
+    /* bad parameters */
+    assert_rnp_failure(rnp_key_get_default_key(NULL, NULL, 0, NULL));
+    assert_rnp_failure(rnp_key_get_default_key(primary, NULL, 0, NULL));
+    assert_rnp_failure(rnp_key_get_default_key(primary, "nonexistentusage", 0, &def_key));
+    assert_rnp_failure(rnp_key_get_default_key(primary, "sign", UINT32_MAX, &def_key));
+    assert_rnp_failure(rnp_key_get_default_key(primary, "sign", 0, NULL));
+
+    assert_rnp_success(
+      rnp_key_get_default_key(primary, "encrypt", RNP_KEY_SUBKEYS_ONLY, &def_key));
+    assert_rnp_success(rnp_key_get_keyid(def_key, &keyid));
+    assert_string_equal(keyid, "8A05B89FAD5ADED1");
+    rnp_buffer_destroy(keyid);
+    rnp_key_handle_destroy(def_key);
+
+    /* no signing subkey */
+    assert_int_equal(RNP_ERROR_NO_SUITABLE_KEY,
+                     rnp_key_get_default_key(primary, "sign", RNP_KEY_SUBKEYS_ONLY, &def_key));
+    assert_null(def_key);
+
+    /* primary key returned as a default one */
+    assert_rnp_success(rnp_key_get_default_key(primary, "sign", 0, &def_key));
+    assert_rnp_success(rnp_key_get_keyid(def_key, &keyid));
+    assert_string_equal(keyid, "7BC6709B15C23A4A");
+    rnp_buffer_destroy(keyid);
+    rnp_key_handle_destroy(def_key);
+
+    assert_rnp_success(rnp_key_get_default_key(primary, "certify", 0, &def_key));
+    assert_rnp_success(rnp_key_get_keyid(def_key, &keyid));
+    assert_string_equal(keyid, "7BC6709B15C23A4A");
+    rnp_buffer_destroy(keyid);
+    rnp_key_handle_destroy(def_key);
+
+    rnp_key_handle_destroy(primary);
+    assert_rnp_success(rnp_unload_keys(ffi, RNP_KEY_UNLOAD_PUBLIC | RNP_KEY_UNLOAD_SECRET));
+
+    /* primary key with encrypting capability */
+    assert_true(import_pub_keys(ffi, "data/test_key_validity/encrypting-primary.pgp"));
+    assert_rnp_success(rnp_locate_key(ffi, "keyid", "92091b7b76c50017", &primary));
+
+    assert_rnp_success(rnp_key_get_default_key(primary, "encrypt", 0, &def_key));
+    assert_rnp_success(rnp_key_get_keyid(def_key, &keyid));
+    assert_string_equal(keyid, "92091B7B76C50017");
+    rnp_buffer_destroy(keyid);
+    rnp_key_handle_destroy(def_key);
+
+    assert_rnp_success(
+      rnp_key_get_default_key(primary, "encrypt", RNP_KEY_SUBKEYS_ONLY, &def_key));
+    assert_rnp_success(rnp_key_get_keyid(def_key, &keyid));
+    assert_string_equal(keyid, "C2E243E872C1FE50");
+    rnp_buffer_destroy(keyid);
+    rnp_key_handle_destroy(def_key);
+
+    rnp_key_handle_destroy(primary);
+    rnp_ffi_destroy(ffi);
+}
+
 /* This test checks that any exceptions thrown by the internal library
  * will not propagate beyond the FFI boundary.
  * In this case we (ab)use a callback to mimic this scenario.

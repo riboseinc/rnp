@@ -6176,6 +6176,64 @@ try {
 FFI_GUARD
 
 rnp_result_t
+rnp_key_get_default_key(rnp_key_handle_t  primary_key,
+                        const char *      usage,
+                        uint32_t          flags,
+                        rnp_key_handle_t *default_key)
+try {
+    if (!primary_key || !usage || !default_key) {
+        return RNP_ERROR_NULL_POINTER;
+    }
+    uint8_t keyflag = 0;
+    bool    no_primary = false;
+    if (!str_to_key_flag(usage, &keyflag)) {
+        return RNP_ERROR_BAD_PARAMETERS;
+    }
+    if (flags & RNP_KEY_SUBKEYS_ONLY) {
+        no_primary = true;
+        flags &= ~RNP_KEY_SUBKEYS_ONLY;
+    }
+    if (flags) {
+        FFI_LOG(primary_key->ffi, "Invalid flags: %" PRIu32, flags);
+        return RNP_ERROR_BAD_PARAMETERS;
+    }
+    pgp_key_t *key = get_key_prefer_public(primary_key);
+    if (!key) {
+        return RNP_ERROR_BAD_PARAMETERS;
+    }
+    pgp_key_t *defkey = find_suitable_key(
+      PGP_OP_UNKNOWN, key, &primary_key->ffi->key_provider, keyflag, no_primary);
+    if (!defkey) {
+        *default_key = NULL;
+        return RNP_ERROR_NO_SUITABLE_KEY;
+    }
+    pgp_key_search_t search = {(pgp_key_search_type_t) 0};
+    search.type = PGP_KEY_SEARCH_FINGERPRINT;
+    search.by.fingerprint = defkey->fp();
+
+    // search pubring
+    pgp_key_t *pub = rnp_key_store_search(primary_key->ffi->pubring, &search, NULL);
+    // search secring
+    pgp_key_t *sec = rnp_key_store_search(primary_key->ffi->secring, &search, NULL);
+
+    if (pub || sec) {
+        *default_key = (rnp_key_handle_t) malloc(sizeof(**default_key));
+        if (!*default_key) {
+            return RNP_ERROR_OUT_OF_MEMORY;
+        }
+        (*default_key)->ffi = primary_key->ffi;
+        (*default_key)->pub = pub;
+        (*default_key)->sec = sec;
+        (*default_key)->locator = search;
+    } else {
+        *default_key = NULL;
+        return RNP_ERROR_NO_SUITABLE_KEY;
+    }
+    return RNP_SUCCESS;
+}
+FFI_GUARD
+
+rnp_result_t
 rnp_key_get_alg(rnp_key_handle_t handle, char **alg)
 try {
     if (!handle || !alg) {

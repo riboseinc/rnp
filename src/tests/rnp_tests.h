@@ -325,6 +325,8 @@ void test_ffi_detached_cleartext_signed_input(void **state);
 
 void test_ffi_key_export_autocrypt(void **state);
 
+void test_ffi_key_default_subkey(void **);
+
 void test_ffi_decrypt_edge_cases(void **state);
 
 void test_ffi_key_get_protection_info(void **state);
